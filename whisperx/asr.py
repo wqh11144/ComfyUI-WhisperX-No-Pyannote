@@ -10,7 +10,6 @@ from transformers import Pipeline
 from transformers.pipelines.pt_utils import PipelineIterator
 
 from .audio import N_SAMPLES, SAMPLE_RATE, load_audio, log_mel_spectrogram
-from .vad import load_vad_model, merge_chunks
 from .types import TranscriptionResult, SingleSegment
 
 def find_numeral_symbol_tokens(tokenizer):
@@ -96,8 +95,6 @@ class FasterWhisperPipeline(Pipeline):
     def __init__(
             self,
             model,
-            vad,
-            vad_params: dict,
             options : NamedTuple,
             tokenizer=None,
             device: Union[int, str, "torch.device"] = -1,
@@ -129,8 +126,6 @@ class FasterWhisperPipeline(Pipeline):
             self.device = device
 
         super(Pipeline, self).__init__()
-        self.vad_model = vad
-        self._vad_params = vad_params
 
     def _sanitize_parameters(self, **kwargs):
         preprocess_kwargs = {}
@@ -183,13 +178,9 @@ class FasterWhisperPipeline(Pipeline):
                 # print(f2-f1)
                 yield {'inputs': audio[f1:f2]}
 
-        vad_segments = self.vad_model({"waveform": torch.from_numpy(audio).unsqueeze(0), "sample_rate": SAMPLE_RATE})
-        vad_segments = merge_chunks(
-            vad_segments,
-            chunk_size,
-            onset=self._vad_params["vad_onset"],
-            offset=self._vad_params["vad_offset"],
-        )
+        # VAD has been disabled - process entire audio as single segment
+        audio_duration = len(audio) / SAMPLE_RATE
+        vad_segments = [{"start": 0, "end": audio_duration}]
         if self.tokenizer is None:
             language = language or self.detect_language(audio)
             task = task or "transcribe"
@@ -317,8 +308,8 @@ def load_model(whisper_arch,
         "without_timestamps": True,
         "max_initial_timestamp": 0.0,
         "word_timestamps": False,
-        "prepend_punctuations": "\"'“¿([{-",
-        "append_punctuations": "\"'.。,，!！?？:：”)]}、",
+        "prepend_punctuations": "\"'¿([{-",
+        "append_punctuations": "\"'.。,，!！?？:：\")]}、",
         "suppress_numerals": False,
         "max_new_tokens": None,
         "clip_timestamps": None,
@@ -335,25 +326,12 @@ def load_model(whisper_arch,
 
     default_asr_options = faster_whisper.transcribe.TranscriptionOptions(**default_asr_options)
 
-    default_vad_options = {
-        "vad_onset": 0.500,
-        "vad_offset": 0.363
-    }
-
-    if vad_options is not None:
-        default_vad_options.update(vad_options)
-
-    if vad_model is not None:
-        vad_model = vad_model
-    else:
-        vad_model = load_vad_model(torch.device(device), use_auth_token=None, **default_vad_options)
+    # VAD has been disabled - vad_model and vad_options are ignored
 
     return FasterWhisperPipeline(
         model=model,
-        vad=vad_model,
         options=default_asr_options,
         tokenizer=tokenizer,
         language=language,
         suppress_numerals=suppress_numerals,
-        vad_params=default_vad_options,
     )

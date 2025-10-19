@@ -271,7 +271,7 @@ class SubtitlesWriter(ResultWriter):
                             timing["word"] = "\n" + timing["word"]
                         line_len = len(timing["word"].strip())
                     subtitle.append(timing)
-                    times.append((segment["start"], segment["end"], segment.get("speaker")))
+                    times.append((segment["start"], segment["end"], None))
                     if "start" in timing:
                         last = timing["start"]
             if len(subtitle) > 0:
@@ -288,10 +288,8 @@ class SubtitlesWriter(ResultWriter):
                     subtitle_text = " ".join([word["word"] for word in subtitle])
                 has_timing = any(["start" in word for word in subtitle])
 
-                # add [$SPEAKER_ID]: to each subtitle if speaker is available
+                # speaker functionality removed
                 prefix = ""
-                if speaker is not None:
-                    prefix = f"[{speaker}]: "
 
                 if highlight_words and has_timing:
                     last = subtitle_start
@@ -319,8 +317,7 @@ class SubtitlesWriter(ResultWriter):
                 segment_start = self.format_timestamp(segment["start"])
                 segment_end = self.format_timestamp(segment["end"])
                 segment_text = segment["text"].strip().replace("-->", "->")
-                if "speaker" in segment:
-                    segment_text = f"[{segment['speaker']}]: {segment_text}"
+                # speaker functionality removed
                 yield segment_start, segment_end, segment_text
 
     def format_timestamp(self, seconds: float):
@@ -381,8 +378,6 @@ class WriteAudacity(ResultWriter):
     
     Please note : Audacity uses seconds in timestamps not ms! 
     Also there is no header expected.
-
-    If speaker is provided it is prepended to the text between double square brackets [[]].
     """
 
     extension: str = "aud"    
@@ -392,7 +387,8 @@ class WriteAudacity(ResultWriter):
         for segment in result["segments"]:
             print(segment["start"], file=file, end=ARROW)
             print(segment["end"], file=file, end=ARROW)
-            print( ( ("[[" + segment["speaker"] + "]]") if "speaker" in segment else "") + segment["text"].strip().replace("\t", " "), file=file, flush=True)
+            # speaker functionality removed
+            print(segment["text"].strip().replace("\t", " "), file=file, flush=True)
 
             
 

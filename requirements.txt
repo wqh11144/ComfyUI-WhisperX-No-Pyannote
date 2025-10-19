@@ -3,6 +3,5 @@ faster-whisper
 transformers
 pandas
 nltk
-pyannote.audio
 ffmpeg-python
 translators

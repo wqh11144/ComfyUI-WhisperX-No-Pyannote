@@ -75,12 +75,6 @@ class WhisperX:
                      "batch_size":("INT",{
                          "default": 4
                      }),
-                     "if_mutiple_speaker":("BOOLEAN",{
-                         "default": False
-                     }),
-                     "use_auth_token":("STRING",{
-                         "default": "put your huggingface user auth token here for Assign speaker labels"
-                     }),
                      "if_translate":("BOOLEAN",{
                          "default": False
                      }),
@@ -99,8 +93,7 @@ class WhisperX:
     RETURN_NAMES = ("ori_SRT","trans_SRT")
     FUNCTION = "get_srt"
 
-    def get_srt(self, audio,model_type,batch_size,if_mutiple_speaker,
-                use_auth_token,if_translate,translator,to_language):
+    def get_srt(self, audio,model_type,batch_size,if_translate,translator,to_language):
         compute_type = "float16"
 
         base_name = os.path.basename(audio)[:-4]
@@ -121,18 +114,6 @@ class WhisperX:
         
         # delete model if low on GPU resources
         import gc; gc.collect(); torch.cuda.empty_cache(); del model_a,model
-        if if_mutiple_speaker:
-            # 3. Assign speaker labels
-            diarize_model = whisperx.DiarizationPipeline(use_auth_token=use_auth_token, device=device)
-
-            # add min/max number of speakers if known
-            diarize_segments = diarize_model(audio)
-            # diarize_model(audio, min_speakers=min_speakers, max_speakers=max_speakers)
-
-            result = whisperx.assign_word_speakers(diarize_segments, result)
-            import gc; gc.collect(); torch.cuda.empty_cache(); del diarize_model
-        # print(diarize_segments)
-        # print(result.segments) # segments are now assigned speaker IDs
         
         srt_path = os.path.join(out_path,f"{time.time()}_{base_name}.srt")
         trans_srt_path = os.path.join(out_path,f"{time.time()}_{base_name}_{to_language}.srt")
@@ -141,17 +122,13 @@ class WhisperX:
         for i, res in enumerate(tqdm(result["segments"],desc="Transcribing ...", total=len(result["segments"]))):
             start = timedelta(seconds=res['start'])
             end = timedelta(seconds=res['end'])
-            try:
-                speaker_name = res["speaker"][-1]
-            except:
-                speaker_name = "0"
             content = res['text']
-            srt_line.append(srt.Subtitle(index=i+1, start=start, end=end, content=speaker_name+content))
+            srt_line.append(srt.Subtitle(index=i+1, start=start, end=end, content=content))
             if if_translate:
                 #if i== 0:
                    # _ = ts.preaccelerate_and_speedtest() 
                 content = ts.translate_text(query_text=content, translator=translator,to_language=to_language)
-                trans_srt_line.append(srt.Subtitle(index=i+1, start=start, end=end, content=speaker_name+content))
+                trans_srt_line.append(srt.Subtitle(index=i+1, start=start, end=end, content=content))
                 
         with open(srt_path, 'w', encoding="utf-8") as f:
             f.write(srt.compose(srt_line))

@@ -9,7 +9,6 @@ import torch
 from .alignment import align, load_align_model
 from .asr import load_model
 from .audio import load_audio
-from .diarize import DiarizationPipeline, assign_word_speakers
 from .utils import (LANGUAGES, TO_LANGUAGE_CODE, get_writer, optional_float,
                     optional_int, str2bool)
 
@@ -39,14 +38,9 @@ def cli():
     parser.add_argument("--return_char_alignments", action='store_true', help="Return character-level alignments in the output json file")
 
     # vad params
-    parser.add_argument("--vad_onset", type=float, default=0.500, help="Onset threshold for VAD (see pyannote.audio), reduce this if speech is not being detected")
-    parser.add_argument("--vad_offset", type=float, default=0.363, help="Offset threshold for VAD (see pyannote.audio), reduce this if speech is not being detected.")
+    parser.add_argument("--vad_onset", type=float, default=0.500, help="Onset threshold for VAD, reduce this if speech is not being detected")
+    parser.add_argument("--vad_offset", type=float, default=0.363, help="Offset threshold for VAD, reduce this if speech is not being detected.")
     parser.add_argument("--chunk_size", type=int, default=30, help="Chunk size for merging VAD segments. Default is 30, reduce this if the chunk is too long.")
-
-    # diarization params
-    parser.add_argument("--diarize", action="store_true", help="Apply diarization to assign speaker labels to each segment/word")
-    parser.add_argument("--min_speakers", default=None, type=int, help="Minimum number of speakers to in audio file")
-    parser.add_argument("--max_speakers", default=None, type=int, help="Maximum number of speakers to in audio file")
 
     parser.add_argument("--temperature", type=float, default=0, help="temperature to use for sampling")
     parser.add_argument("--best_of", type=optional_int, default=5, help="number of candidates when sampling with non-zero temperature")
@@ -72,8 +66,6 @@ def cli():
     parser.add_argument("--segment_resolution", type=str, default="sentence", choices=["sentence", "chunk"], help="(not possible with --no_align) the maximum number of characters in a line before breaking the line")
 
     parser.add_argument("--threads", type=optional_int, default=0, help="number of threads used by torch for CPU inference; supercedes MKL_NUM_THREADS/OMP_NUM_THREADS")
-
-    parser.add_argument("--hf_token", type=str, default=None, help="Hugging Face Access Token to access PyAnnote gated models")
 
     parser.add_argument("--print_progress", type=str2bool, default = False, help = "if True, progress will be printed in transcribe() and align() methods.")
     # fmt: on
@@ -101,15 +93,11 @@ def cli():
 
     return_char_alignments: bool = args.pop("return_char_alignments")
 
-    hf_token: str = args.pop("hf_token")
     vad_onset: float = args.pop("vad_onset")
     vad_offset: float = args.pop("vad_offset")
 
     chunk_size: int = args.pop("chunk_size")
 
-    diarize: bool = args.pop("diarize")
-    min_speakers: int = args.pop("min_speakers")
-    max_speakers: int = args.pop("max_speakers")
     print_progress: bool = args.pop("print_progress")
 
     if args["language"] is not None:
@@ -209,18 +197,6 @@ def cli():
         gc.collect()
         torch.cuda.empty_cache()
 
-    # >> Diarize
-    if diarize:
-        if hf_token is None:
-            print("Warning, no --hf_token used, needs to be saved in environment variable, otherwise will throw error loading diarization model...")
-        tmp_results = results
-        print(">>Performing diarization...")
-        results = []
-        diarize_model = DiarizationPipeline(use_auth_token=hf_token, device=device)
-        for result, input_audio_path in tmp_results:
-            diarize_segments = diarize_model(input_audio_path, min_speakers=min_speakers, max_speakers=max_speakers)
-            result = assign_word_speakers(diarize_segments, result)
-            results.append((result, input_audio_path))
     # >> Write
     for result, audio_path in results:
         result["language"] = align_language
