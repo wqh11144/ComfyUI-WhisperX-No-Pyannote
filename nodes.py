@@ -115,11 +115,16 @@ class WhisperX:
         # 保存原始 segments（用于 segment 级别）
         original_segments = result["segments"]
         
-        # 2. Align whisper output (字符级别需要 return_char_alignments=True)
-        # 对齐后的 segments 是句子级别的
+        # 2. Align whisper output
+        # return_char_alignments: char 级别需要
+        # merge_sentences: segment/word/char 需要合并，sentence 不合并
         return_char = (srt_level == "char")
+        merge_sentences = (srt_level != "sentence")
+        
         model_a, metadata = whisperx.load_align_model(language_code=language_code, device=device)
-        result = whisperx.align(result["segments"], model_a, metadata, audio_data, device, return_char_alignments=return_char)
+        result = whisperx.align(result["segments"], model_a, metadata, audio_data, device, 
+                               return_char_alignments=return_char, 
+                               merge_sentences=merge_sentences)
         
         # delete model if low on GPU resources
         import gc; gc.collect(); torch.cuda.empty_cache(); del model_a,model
@@ -145,7 +150,8 @@ class WhisperX:
                     trans_srt_line.append(srt.Subtitle(index=i+1, start=start, end=end, content=translated))
         
         elif srt_level == "sentence":
-            # Sentence 级别：对齐后的句子（使用 PunktSentenceTokenizer 分割）
+            # Sentence 级别：使用内置的 PunktSentenceTokenizer 分割
+            # align() 函数已经按句子分割好了（merge_sentences=False）
             for i, seg in enumerate(tqdm(result["segments"], desc="Generating sentence-level SRT...", total=len(result["segments"]))):
                 start = timedelta(seconds=seg['start'])
                 end = timedelta(seconds=seg['end'])
@@ -197,10 +203,11 @@ class WhisperX:
         # 写入文件
         with open(srt_path, 'w', encoding="utf-8") as f:
             f.write(srt.compose(srt_line))
-        with open(trans_srt_path, 'w', encoding="utf-8") as f:
-            f.write(srt.compose(trans_srt_line))
-
+        
+        # 只在翻译时才写入翻译文件
         if if_translate:
+            with open(trans_srt_path, 'w', encoding="utf-8") as f:
+                f.write(srt.compose(trans_srt_line))
             return (srt_path,trans_srt_path)
         else:
             return (srt_path,srt_path)

@@ -141,6 +141,7 @@ def align(
     return_char_alignments: bool = False,
     print_progress: bool = False,
     combined_progress: bool = False,
+    merge_sentences: bool = True,
 ) -> AlignedTranscriptionResult:
     """
     Align phoneme recognition predictions to known transcription.
@@ -370,13 +371,17 @@ def align(
         aligned_subsegments = pd.DataFrame(aligned_subsegments)
         aligned_subsegments["start"] = interpolate_nans(aligned_subsegments["start"], method=interpolate_method)
         aligned_subsegments["end"] = interpolate_nans(aligned_subsegments["end"], method=interpolate_method)
-        # concatenate sentences with same timestamps
-        agg_dict = {"text": " ".join, "words": "sum"}
-        if model_lang in LANGUAGES_WITHOUT_SPACES:
-            agg_dict["text"] = "".join
-        if return_char_alignments:
-            agg_dict["chars"] = "sum"
-        aligned_subsegments= aligned_subsegments.groupby(["start", "end"], as_index=False).agg(agg_dict)
+        
+        # 根据 merge_sentences 参数决定是否合并句子
+        if merge_sentences:
+            # concatenate sentences with same timestamps
+            agg_dict = {"text": " ".join, "words": "sum"}
+            if model_lang in LANGUAGES_WITHOUT_SPACES:
+                agg_dict["text"] = "".join
+            if return_char_alignments:
+                agg_dict["chars"] = "sum"
+            aligned_subsegments= aligned_subsegments.groupby(["start", "end"], as_index=False).agg(agg_dict)
+        
         aligned_subsegments = aligned_subsegments.to_dict('records')
         aligned_segments += aligned_subsegments
 
