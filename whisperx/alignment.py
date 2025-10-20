@@ -205,7 +205,11 @@ def align(
         punkt_param.abbrev_types = set(PUNKT_ABBREVIATIONS)
         sentence_splitter = PunktSentenceTokenizer(punkt_param)
         sentence_spans = list(sentence_splitter.span_tokenize(text))
-
+        
+        # 调试信息：显示分句数量
+        if len(sentence_spans) > 1:
+            print(f"[WhisperX Alignment] Segment split into {len(sentence_spans)} sentences by PunktSentenceTokenizer")
+        
         segment["clean_char"] = clean_char
         segment["clean_cdx"] = clean_cdx
         segment["clean_wdx"] = clean_wdx
@@ -372,6 +376,9 @@ def align(
         aligned_subsegments["start"] = interpolate_nans(aligned_subsegments["start"], method=interpolate_method)
         aligned_subsegments["end"] = interpolate_nans(aligned_subsegments["end"], method=interpolate_method)
         
+        # 调试信息：显示分句前的数量
+        print(f"[WhisperX Alignment] Before groupby: {len(aligned_subsegments)} subsegments, merge_sentences={merge_sentences}")
+        
         # 根据 merge_sentences 参数决定是否合并句子
         if merge_sentences:
             # concatenate sentences with same timestamps
@@ -381,6 +388,9 @@ def align(
             if return_char_alignments:
                 agg_dict["chars"] = "sum"
             aligned_subsegments= aligned_subsegments.groupby(["start", "end"], as_index=False).agg(agg_dict)
+            print(f"[WhisperX Alignment] After groupby: {len(aligned_subsegments)} segments (merged)")
+        else:
+            print(f"[WhisperX Alignment] Keeping {len(aligned_subsegments)} separate sentences (no merge)")
         
         aligned_subsegments = aligned_subsegments.to_dict('records')
         aligned_segments += aligned_subsegments
