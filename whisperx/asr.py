@@ -168,14 +168,50 @@ def download_model_from_hf(model_name: str, cache_dir: Optional[str] = None) -> 
     else:
         repo_id = model_repo_mapping.get(model_name, f"Systran/faster-whisper-{model_name}")
     
-    print(f"[WhisperX] Preparing to download model: {repo_id}")
+    print(f"[WhisperX] Checking model: {repo_id}")
     
     # Check for HF_ENDPOINT environment variable (for mirrors)
     hf_endpoint = os.environ.get("HF_ENDPOINT", None)
     if hf_endpoint:
         print(f"[WhisperX] Using HuggingFace mirror: {hf_endpoint}")
     
-    # Download parameters
+    # 先尝试使用本地已有的模型
+    try:
+        print(f"[WhisperX] Checking for local model...")
+        local_kwargs = {
+            "repo_id": repo_id,
+            "cache_dir": cache_dir,
+            "local_files_only": True,  # 只使用本地文件
+        }
+        model_path = snapshot_download(**local_kwargs)
+        
+        # 验证关键文件
+        required_files = {
+            "config.json": 0,
+            "model.bin": 100 * 1024 * 1024,  # Min 100 MB
+        }
+        
+        all_files_ok = True
+        for filename, min_size in required_files.items():
+            file_path = os.path.join(model_path, filename)
+            if not os.path.exists(file_path):
+                all_files_ok = False
+                break
+            if os.path.getsize(file_path) < min_size:
+                all_files_ok = False
+                break
+        
+        if all_files_ok:
+            print(f"[WhisperX] ✓ Using cached model at: {model_path}")
+            model_size_gb = os.path.getsize(os.path.join(model_path, "model.bin")) / (1024**3)
+            print(f"[WhisperX] ✓ model.bin: {model_size_gb:.2f} GB")
+            return model_path
+        else:
+            print(f"[WhisperX] Local model incomplete, will download")
+    except Exception as e:
+        print(f"[WhisperX] Local model not found: {e}")
+    
+    # 本地没有或不完整，开始下载
     download_kwargs = {
         "repo_id": repo_id,
         "cache_dir": cache_dir,
