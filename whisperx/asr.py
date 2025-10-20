@@ -389,7 +389,21 @@ class FasterWhisperPipeline(Pipeline):
         # TODO hack by collating feature_extractor and image_processor
 
         def stack(items):
-            return {'inputs': torch.stack([x['inputs'] for x in items])}
+            # 处理不同长度的音频块（静音点分割可能产生不同长度）
+            # 找到最大的帧数
+            max_frames = max(x['inputs'].shape[-1] for x in items)
+            
+            # Pad 所有特征到相同大小
+            padded_inputs = []
+            for x in items:
+                features = x['inputs']
+                if features.shape[-1] < max_frames:
+                    # 在时间维度上 pad 到 max_frames
+                    pad_size = max_frames - features.shape[-1]
+                    features = torch.nn.functional.pad(features, (0, pad_size), mode='constant', value=0)
+                padded_inputs.append(features)
+            
+            return {'inputs': torch.stack(padded_inputs)}
         dataloader = torch.utils.data.DataLoader(dataset, num_workers=num_workers, batch_size=batch_size, collate_fn=stack)
         model_iterator = PipelineIterator(dataloader, self.forward, forward_params, loader_batch_size=batch_size)
         final_iterator = PipelineIterator(model_iterator, self.postprocess, postprocess_params)
@@ -411,6 +425,7 @@ class FasterWhisperPipeline(Pipeline):
         # VAD has been disabled - split long audio at silence points
         audio_duration = len(audio) / SAMPLE_RATE
         chunk_duration = 30.0  # 目标块长度（Whisper 最佳处理长度）
+        max_chunk_duration = 35.0  # 最大块长度（避免超过 Whisper 限制）
         
         vad_segments = []
         if audio_duration <= chunk_duration:
@@ -431,6 +446,14 @@ class FasterWhisperPipeline(Pipeline):
                     SAMPLE_RATE, 
                     search_window=5.0  # 前后各搜索 5 秒
                 )
+                
+                # 确保块长度不超过最大限制
+                last_split = split_points[-1]
+                if best_split - last_split > max_chunk_duration:
+                    # 如果超过最大长度，强制在最大长度处分割
+                    best_split = last_split + chunk_duration
+                    print(f"[WhisperX] Warning: Forced split at {best_split:.1f}s (no suitable silence point found)")
+                
                 split_points.append(best_split)
                 
                 # 下一个目标点：从当前分割点 + 30 秒
@@ -439,11 +462,16 @@ class FasterWhisperPipeline(Pipeline):
             # 添加结束点
             split_points.append(audio_duration)
             
-            # 生成 segments
+            # 生成 segments，并确保最后一个块不会太短
             for i in range(len(split_points) - 1):
                 start = split_points[i]
                 end = split_points[i + 1]
-                vad_segments.append({"start": start, "end": end})
+                
+                # 如果是最后一个块且太短（< 5秒），合并到前一个块
+                if i == len(split_points) - 2 and end - start < 5.0 and len(vad_segments) > 0:
+                    vad_segments[-1]["end"] = end
+                else:
+                    vad_segments.append({"start": start, "end": end})
             
             print(f"[WhisperX] Split into {len(vad_segments)} chunks at silence points")
             # 显示每个块的长度
