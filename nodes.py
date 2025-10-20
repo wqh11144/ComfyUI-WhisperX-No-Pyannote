@@ -67,6 +67,7 @@ class WhisperX:
         'translateCom', 'translateMe', 'utibet', 'volcEngine', 'yandex',
         'yeekit', 'youdao']
         lang_list = ["zh","en","ja","ko","ru","fr","de","es","pt","it","ar"]
+        level_list = ["segment", "sentence", "word", "char"]
         return {"required":
                     {"audio": ("AUDIOPATH",),
                      "model_type":(model_list,{
@@ -75,8 +76,8 @@ class WhisperX:
                      "batch_size":("INT",{
                          "default": 4
                      }),
-                     "word_level":("BOOLEAN",{
-                         "default": False
+                     "srt_level":(level_list,{
+                         "default": "segment"
                      }),
                      "if_translate":("BOOLEAN",{
                          "default": False
@@ -96,36 +97,67 @@ class WhisperX:
     RETURN_NAMES = ("ori_SRT","trans_SRT")
     FUNCTION = "get_srt"
 
-    def get_srt(self, audio,model_type,batch_size,word_level,if_translate,translator,to_language):
+    def get_srt(self, audio,model_type,batch_size,srt_level,if_translate,translator,to_language):
         compute_type = "float16"
 
         base_name = os.path.basename(audio)[:-4]
         device = "cuda" if cuda_malloc.cuda_malloc_supported() else "cpu"
+        
         # 1. Transcribe with original whisper (batched)
         if model_type == "large-v3-turbo":
             model_type = "deepdml/faster-whisper-large-v3-turbo-ct2"
         model = whisperx.load_model(model_type, device, compute_type=compute_type)
-        audio = whisperx.load_audio(audio)
-        result = model.transcribe(audio, batch_size=batch_size)
-        # print(result["segments"]) # before alignment
+        audio_data = whisperx.load_audio(audio)
+        result = model.transcribe(audio_data, batch_size=batch_size)
+        
         language_code=result["language"]
-        # 2. Align whisper output
+        
+        # 保存原始 segments（用于 segment 级别）
+        original_segments = result["segments"]
+        
+        # 2. Align whisper output (字符级别需要 return_char_alignments=True)
+        # 对齐后的 segments 是句子级别的
+        return_char = (srt_level == "char")
         model_a, metadata = whisperx.load_align_model(language_code=language_code, device=device)
-        result = whisperx.align(result["segments"], model_a, metadata, audio, device, return_char_alignments=False)
-
-        # print(result["segments"]) # after alignment
+        result = whisperx.align(result["segments"], model_a, metadata, audio_data, device, return_char_alignments=return_char)
         
         # delete model if low on GPU resources
         import gc; gc.collect(); torch.cuda.empty_cache(); del model_a,model
         
-        level_suffix = "_word" if word_level else ""
+        # 生成文件名
+        level_suffix = f"_{srt_level}" if srt_level != "segment" else ""
         srt_path = os.path.join(out_path,f"{time.time()}_{base_name}{level_suffix}.srt")
         trans_srt_path = os.path.join(out_path,f"{time.time()}_{base_name}{level_suffix}_{to_language}.srt")
         srt_line = []
         trans_srt_line = []
         
-        if word_level:
-            # 词级别 SRT：为每个词生成一个字幕条目
+        # 根据不同级别生成字幕
+        if srt_level == "segment":
+            # Segment 级别：原始大段落（未对齐前的）
+            for i, seg in enumerate(tqdm(original_segments, desc="Generating segment-level SRT...", total=len(original_segments))):
+                start = timedelta(seconds=seg['start'])
+                end = timedelta(seconds=seg['end'])
+                content = seg['text']
+                srt_line.append(srt.Subtitle(index=i+1, start=start, end=end, content=content))
+                
+                if if_translate:
+                    translated = ts.translate_text(query_text=content, translator=translator, to_language=to_language)
+                    trans_srt_line.append(srt.Subtitle(index=i+1, start=start, end=end, content=translated))
+        
+        elif srt_level == "sentence":
+            # Sentence 级别：对齐后的句子（使用 PunktSentenceTokenizer 分割）
+            for i, seg in enumerate(tqdm(result["segments"], desc="Generating sentence-level SRT...", total=len(result["segments"]))):
+                start = timedelta(seconds=seg['start'])
+                end = timedelta(seconds=seg['end'])
+                content = seg['text']
+                srt_line.append(srt.Subtitle(index=i+1, start=start, end=end, content=content))
+                
+                if if_translate:
+                    translated = ts.translate_text(query_text=content, translator=translator, to_language=to_language)
+                    trans_srt_line.append(srt.Subtitle(index=i+1, start=start, end=end, content=translated))
+                    
+        elif srt_level == "word":
+            # Word 级别：每个词一个字幕
             word_index = 1
             for seg in tqdm(result["segments"], desc="Generating word-level SRT...", total=len(result["segments"])):
                 if "words" in seg:
@@ -136,25 +168,33 @@ class WhisperX:
                             content = word['word']
                             srt_line.append(srt.Subtitle(index=word_index, start=start, end=end, content=content))
                             
+                            # 词级别不翻译（效果不好）
                             if if_translate:
-                                # 对于词级别，不翻译单个词（翻译单词效果不好）
-                                # 保留原文
                                 trans_srt_line.append(srt.Subtitle(index=word_index, start=start, end=end, content=content))
                             
                             word_index += 1
-        else:
-            # 句子级别 SRT（原有逻辑）
-            for i, res in enumerate(tqdm(result["segments"],desc="Generating sentence-level SRT...", total=len(result["segments"]))):
-                start = timedelta(seconds=res['start'])
-                end = timedelta(seconds=res['end'])
-                content = res['text']
-                srt_line.append(srt.Subtitle(index=i+1, start=start, end=end, content=content))
-                if if_translate:
-                    #if i== 0:
-                       # _ = ts.preaccelerate_and_speedtest() 
-                    content = ts.translate_text(query_text=content, translator=translator,to_language=to_language)
-                    trans_srt_line.append(srt.Subtitle(index=i+1, start=start, end=end, content=content))
-                
+                            
+        elif srt_level == "char":
+            # Char 级别：每个字符一个字幕
+            char_index = 1
+            for seg in tqdm(result["segments"], desc="Generating char-level SRT...", total=len(result["segments"])):
+                if "chars" in seg:
+                    for char in seg["chars"]:
+                        if "start" in char and "end" in char and char['start'] is not None:
+                            start = timedelta(seconds=char['start'])
+                            end = timedelta(seconds=char['end'])
+                            content = char['char']
+                            # 跳过空格字符（可选）
+                            if content.strip():
+                                srt_line.append(srt.Subtitle(index=char_index, start=start, end=end, content=content))
+                                
+                                # 字符级别不翻译
+                                if if_translate:
+                                    trans_srt_line.append(srt.Subtitle(index=char_index, start=start, end=end, content=content))
+                                
+                                char_index += 1
+        
+        # 写入文件
         with open(srt_path, 'w', encoding="utf-8") as f:
             f.write(srt.compose(srt_line))
         with open(trans_srt_path, 'w', encoding="utf-8") as f:
