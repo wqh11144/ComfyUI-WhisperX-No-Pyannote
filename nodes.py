@@ -111,6 +111,16 @@ class WhisperX:
                      }),
                      "to_language":(lang_list,{
                          "default": "en"
+                     }),
+                     "temperature":("FLOAT",{
+                         "default": 0.0,
+                         "min": 0.0,
+                         "max": 1.0,
+                         "step": 0.1,
+                         "display": "slider"
+                     }),
+                     "condition_on_previous_text":("BOOLEAN",{
+                         "default": False
                      })
                      },
                 }
@@ -121,7 +131,7 @@ class WhisperX:
     RETURN_NAMES = ("ori_srt_file","trans_srt_file","ori_srt_string","trans_srt_string")
     FUNCTION = "get_srt"
 
-    def get_srt(self, audio,model_type,language,batch_size,srt_level,if_translate,translator,to_language):
+    def get_srt(self, audio,model_type,language,batch_size,srt_level,if_translate,translator,to_language,temperature,condition_on_previous_text):
         # 处理输入：支持 AUDIO 对象或文件路径
         temp_path = None
         
@@ -164,11 +174,53 @@ class WhisperX:
             
             # 配置 ASR 选项：引导 Whisper 生成标点符号
             # initial_prompt 包含多语言标点示例，引导模型正确输出标点
+            # 使用更长、更自然的示例，帮助模型学习标点模式
             asr_options = {
                 "initial_prompt": (
-                    "这是一段普通话对话。包含逗号、句号、感叹号！还有问号？"
-                    "This is an English sentence. It has commas, periods, exclamation marks! And question marks?"
+                    # 中文示例（丰富标点符号，包括感叹号、问号、逗号、顿号、省略号、引号、书名号等）
+                    "你好，今天天气真好！外面阳光明媚，温度适宜。你想去哪里玩呢？我们可以去公园散步，也可以去咖啡馆聊天。"
+                    "请注意：天气预报说下午可能下雨……要不要带把伞？“当然要！”小明说。——来自《天气物语》。"
+                    "哈哈，你听说了吗？昨天的比赛，简直太精彩了！"
+                    "唉，事情为什么会变成这样呢？"
+                    "快点儿，我们要迟到了！（妈妈喊道。）"
+                    "……其实，我还有很多话没说出口。"
+
+                    # 英文示例（包含丰富标点：!?,.:;"'—()…）
+                    "Hello, how are you today? I'm doing great, thank you! The weather is beautiful, isn't it? Yes, it's perfect for a walk."
+                    "Well... what do you think about the movie—did you like it? \"Absolutely amazing!\" Sarah exclaimed."
+                    "Don't forget: tomorrow's meeting is at 10 a.m. -- see you there!"
+                    "'Wait,' he whispered, 'are you sure about this?'"
+
+                    # 日文示例（包含多种日语标点：。！？「」、…）
+                    "こんにちは、今日はいい天気ですね！本当に素晴らしいです。どこへ行きますか？公園に散歩しましょう。"
+                    "「ねえ、知ってる？」…昨日のテスト、めっちゃ難しかった！"
+                    "えっ！？うそでしょ？"
+                    "……静かなる夜に、星が輝く。"
+
+                    # 韩文示例（丰富的标点：!?, . " ” … ）
+                    "안녕하세요, 오늘 날씨가 정말 좋네요! 네, 정말 아름답습니다."
+                    "“정말요?” 그는 물었다. 믿을 수 없어…"
+                    "뭐라고?! 그게 무슨 뜻이죠?"
+
+                    # 法文示例（丰富标点：!?,.:;«»…）
+                    "Bonjour, comment allez-vous? Très bien, merci! Quelle belle journée, n'est-ce pas ?"
+                    "« Incroyable ! » s'est-elle exclamée. Eh bien… on verra."
+                    "Qu'en penses-tu : c'est une bonne idée ?"
+
+                    # 西班牙文示例（丰富标点：¿¡!?.,:;"«»…）
+                    "Hola, ¿cómo estás? ¡Muy bien, gracias! ¿Has visto la película “El Viaje”? ¡Es fantástica!"
+                    "—¿En serio? ¡No lo puedo creer!"
+                    "Vamos a la cafetería… ¿te apetece?"
+
+                    # 俄文示例（丰富标点：!?, . „“ … —）
+                    "Здравствуйте, как дела? Отлично, спасибо! Сегодня замечательная погода — не правда ли?"
+                    "«Да ну?!» — удивился он. …Тишина повисла в комнате."
+                    "Что это было?.."
                 ),
+                # 使用用户设置的上下文条件（有助于生成连贯的标点，但可能导致重复）
+                "condition_on_previous_text": condition_on_previous_text,
+                # 使用用户设置的温度（0.0=最确定，有利于标点生成；值越高越随机）
+                "temperatures": [temperature],
                 # 降低 no_speech_threshold 以提高识别率（默认 0.6 太高）
                 # 值越低，越容易识别出语音内容（但可能增加误识别）
                 "no_speech_threshold": 0.4,
@@ -177,6 +229,7 @@ class WhisperX:
             }
             
             print(f"[WhisperX] Using language: {language} (skip auto-detection)")
+            print(f"[WhisperX] Temperature: {temperature} | Context: {condition_on_previous_text}")
             model = whisperx.load_model(model_type, device, compute_type=compute_type, asr_options=asr_options, language=language)
             audio_data = whisperx.load_audio(audio_path)  # 使用 audio_path 而不是 audio
             result = model.transcribe(audio_data, batch_size=batch_size)
