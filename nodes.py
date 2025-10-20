@@ -106,7 +106,13 @@ class WhisperX:
         # 1. Transcribe with original whisper (batched)
         if model_type == "large-v3-turbo":
             model_type = "deepdml/faster-whisper-large-v3-turbo-ct2"
-        model = whisperx.load_model(model_type, device, compute_type=compute_type)
+        
+        # 配置 ASR 选项，添加标点符号提示
+        asr_options = {
+            "initial_prompt": "以下是普通话的句子，包含适当的标点符号。Hello, this is a properly punctuated sentence.",
+        }
+        
+        model = whisperx.load_model(model_type, device, compute_type=compute_type, asr_options=asr_options)
         audio_data = whisperx.load_audio(audio)
         result = model.transcribe(audio_data, batch_size=batch_size)
         
