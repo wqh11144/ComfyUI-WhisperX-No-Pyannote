@@ -632,6 +632,14 @@ def load_model(whisper_arch,
     if whisper_arch.endswith(".en"):
         language = "en"
 
+    # 固定缓存路径，避免受其他节点的 HF_CACHE 环境变量影响
+    if download_root is None:
+        # 使用默认的 HuggingFace 缓存路径（~/.cache/huggingface）
+        # 而不是受环境变量 HF_HOME 或其他节点影响
+        default_cache = os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub")
+        download_root = default_cache
+        print(f"[WhisperX] Using fixed cache directory: {download_root}")
+
     # Download and load model
     if model is None:
         try:
