@@ -390,17 +390,24 @@ class FasterWhisperPipeline(Pipeline):
 
         def stack(items):
             # 处理不同长度的音频块（静音点分割可能产生不同长度）
-            # 找到最大的帧数
-            max_frames = max(x['inputs'].shape[-1] for x in items)
+            # Whisper 要求固定 3000 帧（30秒音频）
+            target_frames = 3000  # N_FRAMES = 3000
             
-            # Pad 所有特征到相同大小
+            # Pad 或截断所有特征到 3000 帧
             padded_inputs = []
             for x in items:
                 features = x['inputs']
-                if features.shape[-1] < max_frames:
-                    # 在时间维度上 pad 到 max_frames
-                    pad_size = max_frames - features.shape[-1]
+                current_frames = features.shape[-1]
+                
+                if current_frames < target_frames:
+                    # Pad 到 3000 帧
+                    pad_size = target_frames - current_frames
                     features = torch.nn.functional.pad(features, (0, pad_size), mode='constant', value=0)
+                elif current_frames > target_frames:
+                    # 截断到 3000 帧（理论上不应该发生，但作为安全保障）
+                    features = features[..., :target_frames]
+                    print(f"[WhisperX] Warning: Truncated features from {current_frames} to {target_frames} frames")
+                
                 padded_inputs.append(features)
             
             return {'inputs': torch.stack(padded_inputs)}
@@ -425,7 +432,7 @@ class FasterWhisperPipeline(Pipeline):
         # VAD has been disabled - split long audio at silence points
         audio_duration = len(audio) / SAMPLE_RATE
         chunk_duration = 30.0  # 目标块长度（Whisper 最佳处理长度）
-        max_chunk_duration = 35.0  # 最大块长度（避免超过 Whisper 限制）
+        max_chunk_duration = 30.0  # 最大块长度（严格不超过 30 秒，Whisper 硬性限制）
         
         vad_segments = []
         if audio_duration <= chunk_duration:
@@ -447,12 +454,15 @@ class FasterWhisperPipeline(Pipeline):
                     search_window=5.0  # 前后各搜索 5 秒
                 )
                 
-                # 确保块长度不超过最大限制
+                # 确保块长度严格不超过 30 秒（Whisper 硬性限制）
                 last_split = split_points[-1]
                 if best_split - last_split > max_chunk_duration:
-                    # 如果超过最大长度，强制在最大长度处分割
-                    best_split = last_split + chunk_duration
+                    # 如果超过 30 秒，强制在 30 秒处分割
+                    best_split = last_split + max_chunk_duration
                     print(f"[WhisperX] Warning: Forced split at {best_split:.1f}s (no suitable silence point found)")
+                elif best_split - last_split < 5.0 and current_target < audio_duration:
+                    # 如果块太短（< 5秒）且不是最后一块，尝试延长
+                    best_split = min(last_split + chunk_duration, audio_duration)
                 
                 split_points.append(best_split)
                 
