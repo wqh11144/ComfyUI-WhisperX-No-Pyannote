@@ -116,8 +116,7 @@ class WhisperX:
                          "default": 0.0,
                          "min": 0.0,
                          "max": 1.0,
-                         "step": 0.1,
-                         "display": "slider"
+                         "step": 0.1
                      }),
                      "condition_on_previous_text":("BOOLEAN",{
                          "default": False
