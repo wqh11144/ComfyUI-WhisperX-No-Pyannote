@@ -201,10 +201,10 @@ def align(
             if any([c in model_dictionary.keys() for c in wrd]):
                 clean_wdx.append(wdx)
 
-                
-        # 使用正则表达式按句子分割（支持中英文标点）
-        # 中文句子结束符：。！？；  英文句子结束符：. ! ? ;
-        sentence_pattern = re.compile(r'([^。！？；.!?;]+[。！？；.!?;]+)')
+        
+        # 使用正则表达式按句子分割（支持中英文标点，并包含逗号）
+        # 中文句子结束符：。！？；， 英文句子结束符：. ! ? ; ,
+        sentence_pattern = re.compile(r'([^。！？；，,!?\.;]+[。！？；，,!?\.;]+)')
         sentence_matches = sentence_pattern.finditer(text)
         
         # 生成 sentence_spans
