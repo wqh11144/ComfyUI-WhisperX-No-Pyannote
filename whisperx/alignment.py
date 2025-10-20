@@ -4,6 +4,7 @@ C. Max Bain
 """
 from dataclasses import dataclass
 from typing import Iterable, Union, List
+import os
 
 import numpy as np
 import pandas as pd
@@ -70,6 +71,11 @@ def load_align_model(language_code, device, model_name=None, model_dir=None):
                 Please find a wav2vec2.0 model finetuned on this language in https://huggingface.co/models, then pass the model name in --align_model [MODEL_NAME]")
             raise ValueError(f"No default align-model for language: {language_code}")
 
+    # Check for HF_ENDPOINT environment variable
+    hf_endpoint = os.environ.get("HF_ENDPOINT", None)
+    if hf_endpoint:
+        print(f"[WhisperX Alignment] Using HuggingFace mirror: {hf_endpoint}")
+
     if model_name in torchaudio.pipelines.__all__:
         pipeline_type = "torchaudio"
         bundle = torchaudio.pipelines.__dict__[model_name]
@@ -77,13 +83,44 @@ def load_align_model(language_code, device, model_name=None, model_dir=None):
         labels = bundle.get_labels()
         align_dictionary = {c.lower(): i for i, c in enumerate(labels)}
     else:
-        try:
-            processor = Wav2Vec2Processor.from_pretrained(model_name)
-            align_model = Wav2Vec2ForCTC.from_pretrained(model_name)
-        except Exception as e:
-            print(e)
-            print(f"Error loading model from huggingface, check https://huggingface.co/models for finetuned wav2vec2.0 models")
-            raise ValueError(f'The chosen align_model "{model_name}" could not be found in huggingface (https://huggingface.co/models) or torchaudio (https://pytorch.org/audio/stable/pipelines.html#id14)')
+        # Load alignment model from HuggingFace with retry mechanism
+        print(f"[WhisperX Alignment] Loading alignment model: {model_name}")
+        max_retries = 3
+        retry_delay = 5
+        
+        for attempt in range(max_retries):
+            try:
+                processor = Wav2Vec2Processor.from_pretrained(
+                    model_name,
+                    cache_dir=model_dir,
+                    resume_download=True
+                )
+                align_model = Wav2Vec2ForCTC.from_pretrained(
+                    model_name,
+                    cache_dir=model_dir,
+                    resume_download=True
+                )
+                print(f"[WhisperX Alignment] ✓ Alignment model loaded successfully")
+                break
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    error_msg = str(e)
+                    print(f"[WhisperX Alignment] Download failed (attempt {attempt + 1}/{max_retries})")
+                    print(f"[WhisperX Alignment] Error: {error_msg}")
+                    print(f"[WhisperX Alignment] Retrying in {retry_delay} seconds...")
+                    import time
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                else:
+                    print(f"[WhisperX Alignment] ❌ Failed to load alignment model after {max_retries} attempts")
+                    print(f"[WhisperX Alignment] Error: {str(e)}")
+                    print(f"[WhisperX Alignment] ")
+                    print(f"[WhisperX Alignment] Troubleshooting:")
+                    print(f"[WhisperX Alignment]   1. Set mirror: export HF_ENDPOINT=https://hf-mirror.com")
+                    print(f"[WhisperX Alignment]   2. Restart ComfyUI")
+                    print(f"[WhisperX Alignment]   3. Check: https://huggingface.co/models")
+                    raise ValueError(f'The chosen align_model "{model_name}" could not be loaded from huggingface or torchaudio')
+        
         pipeline_type = "huggingface"
         align_model = align_model.to(device)
         labels = processor.tokenizer.get_vocab()
