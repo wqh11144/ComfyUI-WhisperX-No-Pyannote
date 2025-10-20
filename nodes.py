@@ -114,6 +114,11 @@ class WhisperX:
                 "这是一段普通话对话。包含逗号、句号、感叹号！还有问号？"
                 "This is an English sentence. It has commas, periods, exclamation marks! And question marks?"
             ),
+            # 降低 no_speech_threshold 以提高识别率（默认 0.6 太高）
+            # 值越低，越容易识别出语音内容（但可能增加误识别）
+            "no_speech_threshold": 0.4,
+            # 降低 log_prob_threshold 以接受更多识别结果
+            "log_prob_threshold": -1.5,
         }
         
         model = whisperx.load_model(model_type, device, compute_type=compute_type, asr_options=asr_options)
@@ -123,6 +128,7 @@ class WhisperX:
         language_code=result["language"]
         
         # 保存原始 segments（用于 segment 级别）
+        # 由于使用了基于静音点的智能分割，不会产生重复，无需去重
         original_segments = result["segments"]
         
         # 2. Align whisper output
@@ -135,6 +141,8 @@ class WhisperX:
         result = whisperx.align(result["segments"], model_a, metadata, audio_data, device, 
                                return_char_alignments=return_char, 
                                merge_sentences=merge_sentences)
+        
+        # 基于静音点分割后，不会产生重复内容，无需额外去重处理
         
         # delete model if low on GPU resources
         import gc; gc.collect(); torch.cuda.empty_cache(); del model_a,model

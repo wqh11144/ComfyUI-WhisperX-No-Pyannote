@@ -15,6 +15,117 @@ from huggingface_hub import snapshot_download
 from .audio import N_SAMPLES, SAMPLE_RATE, load_audio, log_mel_spectrogram
 from .types import TranscriptionResult, SingleSegment
 
+
+def find_silence_points(audio: np.ndarray, sample_rate: int = SAMPLE_RATE, 
+                        silence_threshold: float = 0.02, min_silence_duration: float = 0.3):
+    """
+    检测音频中的静音点
+    
+    Args:
+        audio: 音频数据 (numpy array)
+        sample_rate: 采样率
+        silence_threshold: 静音阈值（相对于最大音量）
+        min_silence_duration: 最小静音持续时间（秒）
+    
+    Returns:
+        List of (start, end) tuples 表示静音区间
+    """
+    # 计算音频能量（使用滑动窗口）
+    window_size = int(0.02 * sample_rate)  # 20ms 窗口
+    hop_size = window_size // 2
+    
+    # 计算每个窗口的 RMS 能量
+    energy = []
+    for i in range(0, len(audio) - window_size, hop_size):
+        window = audio[i:i + window_size]
+        rms = np.sqrt(np.mean(window ** 2))
+        energy.append(rms)
+    
+    energy = np.array(energy)
+    
+    # 动态阈值：基于音频的最大能量
+    max_energy = np.max(energy)
+    threshold = max_energy * silence_threshold
+    
+    # 检测静音区间
+    is_silence = energy < threshold
+    silence_regions = []
+    
+    start = None
+    for i, silent in enumerate(is_silence):
+        if silent and start is None:
+            start = i
+        elif not silent and start is not None:
+            # 静音区间结束
+            duration = (i - start) * hop_size / sample_rate
+            if duration >= min_silence_duration:
+                # 转换为秒
+                start_time = start * hop_size / sample_rate
+                end_time = i * hop_size / sample_rate
+                silence_regions.append((start_time, end_time))
+            start = None
+    
+    return silence_regions
+
+
+def find_best_split_point(audio: np.ndarray, target_time: float, 
+                          sample_rate: int = SAMPLE_RATE, search_window: float = 5.0):
+    """
+    在目标时间附近寻找最佳分割点（静音点）
+    
+    Args:
+        audio: 音频数据
+        target_time: 目标分割时间（秒）
+        sample_rate: 采样率
+        search_window: 搜索窗口（前后各搜索多少秒）
+    
+    Returns:
+        最佳分割点时间（秒）
+    """
+    # 计算搜索范围
+    search_start = max(0, target_time - search_window)
+    search_end = min(len(audio) / sample_rate, target_time + search_window)
+    
+    # 提取搜索区域的音频
+    start_sample = int(search_start * sample_rate)
+    end_sample = int(search_end * sample_rate)
+    search_audio = audio[start_sample:end_sample]
+    
+    # 在搜索区域内查找静音点
+    silence_regions = find_silence_points(search_audio, sample_rate)
+    
+    if not silence_regions:
+        # 如果没有找到静音点，返回能量最低的点
+        window_size = int(0.1 * sample_rate)  # 100ms 窗口
+        min_energy = float('inf')
+        best_point = target_time
+        
+        for i in range(0, len(search_audio) - window_size, window_size // 2):
+            window = search_audio[i:i + window_size]
+            energy = np.sqrt(np.mean(window ** 2))
+            if energy < min_energy:
+                min_energy = energy
+                best_point = search_start + i / sample_rate
+        
+        return best_point
+    
+    # 找到距离目标时间最近的静音区间中点
+    best_silence = None
+    min_distance = float('inf')
+    
+    for start, end in silence_regions:
+        # 静音区间的实际时间（相对于整个音频）
+        actual_start = search_start + start
+        actual_end = search_start + end
+        mid_point = (actual_start + actual_end) / 2
+        
+        distance = abs(mid_point - target_time)
+        if distance < min_distance:
+            min_distance = distance
+            best_silence = mid_point
+    
+    return best_silence if best_silence is not None else target_time
+
 def download_model_from_hf(model_name: str, cache_dir: Optional[str] = None) -> str:
     """
     Download model from HuggingFace using huggingface_hub with retry mechanism.
@@ -297,22 +408,48 @@ class FasterWhisperPipeline(Pipeline):
                 # print(f2-f1)
                 yield {'inputs': audio[f1:f2]}
 
-        # VAD has been disabled - split long audio into chunks to avoid shape errors
+        # VAD has been disabled - split long audio at silence points
         audio_duration = len(audio) / SAMPLE_RATE
-        chunk_duration = 30.0  # 30 seconds per chunk (Whisper's max input length)
+        chunk_duration = 30.0  # 目标块长度（Whisper 最佳处理长度）
         
         vad_segments = []
         if audio_duration <= chunk_duration:
-            # Short audio, process as single segment
+            # 短音频，作为单个片段处理
             vad_segments = [{"start": 0, "end": audio_duration}]
         else:
-            # Long audio, split into 30-second chunks
-            current_time = 0
-            while current_time < audio_duration:
-                end_time = min(current_time + chunk_duration, audio_duration)
-                vad_segments.append({"start": current_time, "end": end_time})
-                current_time = end_time
-            print(f"[WhisperX] Audio duration: {audio_duration:.1f}s, split into {len(vad_segments)} chunks")
+            # 长音频，在静音点智能分割
+            print(f"[WhisperX] Audio duration: {audio_duration:.1f}s, finding optimal split points...")
+            
+            split_points = [0]  # 开始点
+            current_target = chunk_duration
+            
+            while current_target < audio_duration:
+                # 在目标点附近寻找最佳分割点（静音处）
+                best_split = find_best_split_point(
+                    audio, 
+                    current_target, 
+                    SAMPLE_RATE, 
+                    search_window=5.0  # 前后各搜索 5 秒
+                )
+                split_points.append(best_split)
+                
+                # 下一个目标点：从当前分割点 + 30 秒
+                current_target = best_split + chunk_duration
+            
+            # 添加结束点
+            split_points.append(audio_duration)
+            
+            # 生成 segments
+            for i in range(len(split_points) - 1):
+                start = split_points[i]
+                end = split_points[i + 1]
+                vad_segments.append({"start": start, "end": end})
+            
+            print(f"[WhisperX] Split into {len(vad_segments)} chunks at silence points")
+            # 显示每个块的长度
+            for i, seg in enumerate(vad_segments[:5]):  # 显示前 5 个
+                duration = seg['end'] - seg['start']
+                print(f"[WhisperX]   Chunk {i+1}: {seg['start']:.1f}s - {seg['end']:.1f}s (duration: {duration:.1f}s)")
         if self.tokenizer is None:
             language = language or self.detect_language(audio)
             task = task or "transcribe"
@@ -346,6 +483,13 @@ class FasterWhisperPipeline(Pipeline):
             text = out['text']
             if batch_size in [0, 1, None]:
                 text = text[0]
+            
+            # 调试：显示每个块的识别结果
+            chunk_start = round(vad_segments[idx]['start'], 1)
+            chunk_end = round(vad_segments[idx]['end'], 1)
+            text_preview = text[:60] if text else "(empty)"
+            print(f"[WhisperX] Chunk {idx+1}/{total_segments} ({chunk_start}s-{chunk_end}s): {text_preview}...")
+            
             segments.append(
                 {
                     "text": text,
