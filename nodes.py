@@ -107,9 +107,13 @@ class WhisperX:
         if model_type == "large-v3-turbo":
             model_type = "deepdml/faster-whisper-large-v3-turbo-ct2"
         
-        # 配置 ASR 选项，添加标点符号提示
+        # 配置 ASR 选项：引导 Whisper 生成标点符号
+        # initial_prompt 包含多语言标点示例，引导模型正确输出标点
         asr_options = {
-            "initial_prompt": "以下是普通话的句子，包含适当的标点符号。Hello, this is a properly punctuated sentence.",
+            "initial_prompt": (
+                "这是一段普通话对话。包含逗号、句号、感叹号！还有问号？"
+                "This is an English sentence. It has commas, periods, exclamation marks! And question marks?"
+            ),
         }
         
         model = whisperx.load_model(model_type, device, compute_type=compute_type, asr_options=asr_options)
