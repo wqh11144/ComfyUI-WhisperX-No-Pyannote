@@ -201,14 +201,32 @@ def align(
                 clean_wdx.append(wdx)
 
                 
-        punkt_param = PunktParameters()
-        punkt_param.abbrev_types = set(PUNKT_ABBREVIATIONS)
-        sentence_splitter = PunktSentenceTokenizer(punkt_param)
-        sentence_spans = list(sentence_splitter.span_tokenize(text))
+        # 使用正则表达式按句子分割（支持中英文标点）
+        import re
+        # 中文句子结束符：。！？；  英文句子结束符：. ! ? ;
+        sentence_pattern = re.compile(r'([^。！？；.!?;]+[。！？；.!?;]+)')
+        sentence_matches = sentence_pattern.finditer(text)
+        
+        # 生成 sentence_spans
+        sentence_spans = []
+        for match in sentence_matches:
+            sentence_spans.append((match.start(), match.end()))
+        
+        # 如果正则没有匹配到（无标点），回退到 PunktSentenceTokenizer
+        if len(sentence_spans) == 0:
+            punkt_param = PunktParameters()
+            punkt_param.abbrev_types = set(PUNKT_ABBREVIATIONS)
+            sentence_splitter = PunktSentenceTokenizer(punkt_param)
+            sentence_spans = list(sentence_splitter.span_tokenize(text))
         
         # 调试信息：显示分句数量
+        print(f"[WhisperX Alignment] Segment text length: {len(text)} chars")
+        print(f"[WhisperX Alignment] Split into {len(sentence_spans)} sentences")
         if len(sentence_spans) > 1:
-            print(f"[WhisperX Alignment] Segment split into {len(sentence_spans)} sentences by PunktSentenceTokenizer")
+            # 显示前3个句子的范围
+            for i, (start, end) in enumerate(sentence_spans[:3]):
+                print(f"[WhisperX Alignment]   Sentence {i+1}: '{text[start:end][:50]}...'")
+
         
         segment["clean_char"] = clean_char
         segment["clean_cdx"] = clean_cdx
