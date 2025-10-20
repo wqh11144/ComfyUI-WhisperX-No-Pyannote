@@ -72,7 +72,7 @@ class WhisperX:
         lang_list = ["zh","en","ja","ko","ru","fr","de","es","pt","it","ar"]
         level_list = ["segment", "sentence", "word", "char"]
         return {"required":
-                    {"audio": ("*",),  # 支持 AUDIO 对象和文件路径 (AUDIOPATH)
+                    {"audio": ("AUDIO,AUDIOPATH",),  # 支持 AUDIO 对象和文件路径
                      "model_type":(model_list,{
                          "default": "large-v3"
                      }),
