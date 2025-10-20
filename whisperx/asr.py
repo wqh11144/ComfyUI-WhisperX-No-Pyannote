@@ -1,6 +1,8 @@
 import os
 import warnings
+import time
 from typing import List, Union, Optional, NamedTuple
+from pathlib import Path
 
 import ctranslate2
 import faster_whisper
@@ -8,9 +10,126 @@ import numpy as np
 import torch
 from transformers import Pipeline
 from transformers.pipelines.pt_utils import PipelineIterator
+from huggingface_hub import snapshot_download
 
 from .audio import N_SAMPLES, SAMPLE_RATE, load_audio, log_mel_spectrogram
 from .types import TranscriptionResult, SingleSegment
+
+def download_model_from_hf(model_name: str, cache_dir: Optional[str] = None) -> str:
+    """
+    Download model from HuggingFace using huggingface_hub with retry mechanism.
+    
+    Args:
+        model_name: Model name or repo_id (e.g., "large-v3" or "Systran/faster-whisper-large-v3")
+        cache_dir: Optional cache directory. If None, uses default HF cache.
+    
+    Returns:
+        Path to the downloaded model directory
+    
+    Raises:
+        Exception: If download fails after retries
+    """
+    # Map model names to HuggingFace repo IDs
+    model_repo_mapping = {
+        "large-v3": "Systran/faster-whisper-large-v3",
+        "large-v2": "Systran/faster-whisper-large-v2",
+        "large-v1": "Systran/faster-whisper-large",
+        "large": "Systran/faster-whisper-large",
+        "medium": "Systran/faster-whisper-medium",
+        "medium.en": "Systran/faster-whisper-medium.en",
+        "small": "Systran/faster-whisper-small",
+        "small.en": "Systran/faster-whisper-small.en",
+        "base": "Systran/faster-whisper-base",
+        "base.en": "Systran/faster-whisper-base.en",
+        "tiny": "Systran/faster-whisper-tiny",
+        "tiny.en": "Systran/faster-whisper-tiny.en",
+        "distil-large-v3": "Systran/faster-distil-whisper-large-v3",
+        "distil-medium.en": "Systran/faster-distil-whisper-medium.en",
+        "distil-small.en": "Systran/faster-distil-whisper-small.en",
+    }
+    
+    # Check if it's a custom repo_id or a standard model name
+    if "/" in model_name:
+        repo_id = model_name
+    else:
+        repo_id = model_repo_mapping.get(model_name, f"Systran/faster-whisper-{model_name}")
+    
+    print(f"[WhisperX] Preparing to download model: {repo_id}")
+    
+    # Check for HF_ENDPOINT environment variable (for mirrors)
+    hf_endpoint = os.environ.get("HF_ENDPOINT", None)
+    if hf_endpoint:
+        print(f"[WhisperX] Using HuggingFace mirror: {hf_endpoint}")
+    
+    # Download parameters
+    download_kwargs = {
+        "repo_id": repo_id,
+        "cache_dir": cache_dir,
+        "resume_download": True,
+        "local_files_only": False,
+    }
+    
+    if hf_endpoint:
+        download_kwargs["endpoint"] = hf_endpoint
+    
+    # Retry mechanism for download
+    max_retries = 3
+    retry_delay = 5
+    
+    for attempt in range(max_retries):
+        try:
+            print(f"[WhisperX] Downloading model (attempt {attempt + 1}/{max_retries})...")
+            model_path = snapshot_download(**download_kwargs)
+            
+            # Verify critical files exist and are complete
+            required_files = {
+                "config.json": 0,  # Min size 0 (just check existence)
+                "model.bin": 100 * 1024 * 1024,  # Min 100 MB
+            }
+            
+            all_files_ok = True
+            for filename, min_size in required_files.items():
+                file_path = os.path.join(model_path, filename)
+                if not os.path.exists(file_path):
+                    print(f"[WhisperX] ⚠ Missing file: {filename}")
+                    all_files_ok = False
+                else:
+                    file_size = os.path.getsize(file_path)
+                    if file_size < min_size:
+                        print(f"[WhisperX] ⚠ File too small: {filename} ({file_size} bytes < {min_size} bytes)")
+                        all_files_ok = False
+                    else:
+                        size_mb = file_size / (1024 * 1024)
+                        if filename == "model.bin":
+                            print(f"[WhisperX] ✓ {filename}: {size_mb:.0f} MB")
+            
+            if not all_files_ok:
+                if attempt < max_retries - 1:
+                    print(f"[WhisperX] Model files incomplete, retrying...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                    continue
+                else:
+                    raise ValueError("Model files incomplete after download")
+            
+            print(f"[WhisperX] ✓ Model ready at: {model_path}")
+            return model_path
+            
+        except Exception as e:
+            if attempt < max_retries - 1:
+                print(f"[WhisperX] Download failed: {str(e)}")
+                print(f"[WhisperX] Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+                retry_delay *= 2
+            else:
+                print(f"[WhisperX] ❌ Failed to download model after {max_retries} attempts")
+                print(f"[WhisperX] Error: {str(e)}")
+                print(f"[WhisperX] Troubleshooting:")
+                print(f"[WhisperX]   1. Check internet connection")
+                print(f"[WhisperX]   2. Set mirror: export HF_ENDPOINT=https://hf-mirror.com")
+                print(f"[WhisperX]   3. Check disk space")
+                print(f"[WhisperX]   4. Try: pip install -U huggingface_hub")
+                raise
 
 def find_numeral_symbol_tokens(tokenizer):
     numeral_symbol_tokens = []
@@ -276,12 +395,33 @@ def load_model(whisper_arch,
     if whisper_arch.endswith(".en"):
         language = "en"
 
-    model = model or WhisperModel(whisper_arch,
-                         device=device,
-                         device_index=device_index,
-                         compute_type=compute_type,
-                         download_root=download_root,
-                         cpu_threads=threads)
+    # Download and load model
+    if model is None:
+        try:
+            # Step 1: Download model using huggingface_hub (with retry and verification)
+            print(f"[WhisperX] Loading model: {whisper_arch}")
+            downloaded_path = download_model_from_hf(whisper_arch, cache_dir=download_root)
+            
+            # Step 2: Load the downloaded model with faster-whisper
+            print(f"[WhisperX] Initializing model on device: {device}")
+            model = WhisperModel(
+                downloaded_path,
+                device=device,
+                device_index=device_index,
+                compute_type=compute_type,
+                local_files_only=True,
+                cpu_threads=threads
+            )
+            print(f"[WhisperX] ✓ Model loaded successfully")
+            
+        except Exception as e:
+            print(f"[WhisperX] ❌ Failed to load model: {whisper_arch}")
+            print(f"[WhisperX] Error: {str(e)}")
+            print(f"[WhisperX] ")
+            print(f"[WhisperX] If model download failed, try:")
+            print(f"[WhisperX]   export HF_ENDPOINT=https://hf-mirror.com")
+            print(f"[WhisperX]   Then restart ComfyUI")
+            raise
     if language is not None:
         tokenizer = faster_whisper.tokenizer.Tokenizer(model.hf_tokenizer, model.model.is_multilingual, task=task, language=language)
     else:

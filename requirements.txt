@@ -5,3 +5,4 @@ pandas
 nltk
 ffmpeg-python
 translators
+huggingface_hub>=0.20.0

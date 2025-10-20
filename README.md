@@ -32,13 +32,6 @@ or if you still struggle with huggingface, you may try follow [hf-mirror](https:
 ## Tutorial
 [Demo](https://www.bilibili.com/video/BV19i421y7jb/)
 
-## WeChat Group && Donate
-<div>
-  <figure>
-  <img alt='Wechat' src="wechat.jpg?raw=true" width="300px"/>
-  <img alt='donate' src="donate.jpg?raw=true" width="300px"/>
-  <figure>
-</div>
 
 ## Thanks
 - [whisperX](https://github.com/m-bain/whisperX.git)
