@@ -99,9 +99,9 @@ def download_model_from_hf(model_name: str, cache_dir: Optional[str] = None) -> 
                         print(f"[WhisperX] ⚠ File too small: {filename} ({file_size} bytes < {min_size} bytes)")
                         all_files_ok = False
                     else:
-                        size_mb = file_size / (1024 * 1024)
                         if filename == "model.bin":
-                            print(f"[WhisperX] ✓ {filename}: {size_mb:.0f} MB")
+                            size_gb = file_size / (1024 * 1024 * 1024)
+                            print(f"[WhisperX] ✓ {filename}: {size_gb:.2f} GB ({file_size:,} bytes)")
             
             if not all_files_ok:
                 if attempt < max_retries - 1:
