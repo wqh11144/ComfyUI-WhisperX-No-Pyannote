@@ -5,6 +5,7 @@ C. Max Bain
 from dataclasses import dataclass
 from typing import Iterable, Union, List
 import os
+import re
 
 import numpy as np
 import pandas as pd
@@ -202,7 +203,6 @@ def align(
 
                 
         # 使用正则表达式按句子分割（支持中英文标点）
-        import re
         # 中文句子结束符：。！？；  英文句子结束符：. ! ? ;
         sentence_pattern = re.compile(r'([^。！？；.!?;]+[。！？；.!?;]+)')
         sentence_matches = sentence_pattern.finditer(text)
