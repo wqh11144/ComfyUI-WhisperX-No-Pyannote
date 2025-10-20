@@ -75,6 +75,9 @@ class WhisperX:
                      "batch_size":("INT",{
                          "default": 4
                      }),
+                     "word_level":("BOOLEAN",{
+                         "default": False
+                     }),
                      "if_translate":("BOOLEAN",{
                          "default": False
                      }),
@@ -93,7 +96,7 @@ class WhisperX:
     RETURN_NAMES = ("ori_SRT","trans_SRT")
     FUNCTION = "get_srt"
 
-    def get_srt(self, audio,model_type,batch_size,if_translate,translator,to_language):
+    def get_srt(self, audio,model_type,batch_size,word_level,if_translate,translator,to_language):
         compute_type = "float16"
 
         base_name = os.path.basename(audio)[:-4]
@@ -115,20 +118,42 @@ class WhisperX:
         # delete model if low on GPU resources
         import gc; gc.collect(); torch.cuda.empty_cache(); del model_a,model
         
-        srt_path = os.path.join(out_path,f"{time.time()}_{base_name}.srt")
-        trans_srt_path = os.path.join(out_path,f"{time.time()}_{base_name}_{to_language}.srt")
+        level_suffix = "_word" if word_level else ""
+        srt_path = os.path.join(out_path,f"{time.time()}_{base_name}{level_suffix}.srt")
+        trans_srt_path = os.path.join(out_path,f"{time.time()}_{base_name}{level_suffix}_{to_language}.srt")
         srt_line = []
         trans_srt_line = []
-        for i, res in enumerate(tqdm(result["segments"],desc="Transcribing ...", total=len(result["segments"]))):
-            start = timedelta(seconds=res['start'])
-            end = timedelta(seconds=res['end'])
-            content = res['text']
-            srt_line.append(srt.Subtitle(index=i+1, start=start, end=end, content=content))
-            if if_translate:
-                #if i== 0:
-                   # _ = ts.preaccelerate_and_speedtest() 
-                content = ts.translate_text(query_text=content, translator=translator,to_language=to_language)
-                trans_srt_line.append(srt.Subtitle(index=i+1, start=start, end=end, content=content))
+        
+        if word_level:
+            # 词级别 SRT：为每个词生成一个字幕条目
+            word_index = 1
+            for seg in tqdm(result["segments"], desc="Generating word-level SRT...", total=len(result["segments"])):
+                if "words" in seg:
+                    for word in seg["words"]:
+                        if "start" in word and "end" in word:
+                            start = timedelta(seconds=word['start'])
+                            end = timedelta(seconds=word['end'])
+                            content = word['word']
+                            srt_line.append(srt.Subtitle(index=word_index, start=start, end=end, content=content))
+                            
+                            if if_translate:
+                                # 对于词级别，不翻译单个词（翻译单词效果不好）
+                                # 保留原文
+                                trans_srt_line.append(srt.Subtitle(index=word_index, start=start, end=end, content=content))
+                            
+                            word_index += 1
+        else:
+            # 句子级别 SRT（原有逻辑）
+            for i, res in enumerate(tqdm(result["segments"],desc="Generating sentence-level SRT...", total=len(result["segments"]))):
+                start = timedelta(seconds=res['start'])
+                end = timedelta(seconds=res['end'])
+                content = res['text']
+                srt_line.append(srt.Subtitle(index=i+1, start=start, end=end, content=content))
+                if if_translate:
+                    #if i== 0:
+                       # _ = ts.preaccelerate_and_speedtest() 
+                    content = ts.translate_text(query_text=content, translator=translator,to_language=to_language)
+                    trans_srt_line.append(srt.Subtitle(index=i+1, start=start, end=end, content=content))
                 
         with open(srt_path, 'w', encoding="utf-8") as f:
             f.write(srt.compose(srt_line))
