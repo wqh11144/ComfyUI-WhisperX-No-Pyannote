@@ -297,9 +297,22 @@ class FasterWhisperPipeline(Pipeline):
                 # print(f2-f1)
                 yield {'inputs': audio[f1:f2]}
 
-        # VAD has been disabled - process entire audio as single segment
+        # VAD has been disabled - split long audio into chunks to avoid shape errors
         audio_duration = len(audio) / SAMPLE_RATE
-        vad_segments = [{"start": 0, "end": audio_duration}]
+        chunk_duration = 30.0  # 30 seconds per chunk (Whisper's max input length)
+        
+        vad_segments = []
+        if audio_duration <= chunk_duration:
+            # Short audio, process as single segment
+            vad_segments = [{"start": 0, "end": audio_duration}]
+        else:
+            # Long audio, split into 30-second chunks
+            current_time = 0
+            while current_time < audio_duration:
+                end_time = min(current_time + chunk_duration, audio_duration)
+                vad_segments.append({"start": current_time, "end": end_time})
+                current_time = end_time
+            print(f"[WhisperX] Audio duration: {audio_duration:.1f}s, split into {len(vad_segments)} chunks")
         if self.tokenizer is None:
             language = language or self.detect_language(audio)
             task = task or "transcribe"
