@@ -94,6 +94,9 @@ class WhisperX:
                      "model_type":(model_list,{
                          "default": "large-v3"
                      }),
+                     "language":(lang_list,{  # 新增：语言选择，默认中文
+                         "default": "zh"
+                     }),
                      "batch_size":("INT",{
                          "default": 4
                      }),
@@ -118,7 +121,7 @@ class WhisperX:
     RETURN_NAMES = ("ori_srt_file","trans_srt_file","ori_srt_string","trans_srt_string")
     FUNCTION = "get_srt"
 
-    def get_srt(self, audio,model_type,batch_size,srt_level,if_translate,translator,to_language):
+    def get_srt(self, audio,model_type,language,batch_size,srt_level,if_translate,translator,to_language):
         # 处理输入：支持 AUDIO 对象或文件路径
         temp_path = None
         
@@ -173,11 +176,12 @@ class WhisperX:
                 "log_prob_threshold": -1.5,
             }
             
-            model = whisperx.load_model(model_type, device, compute_type=compute_type, asr_options=asr_options)
+            print(f"[WhisperX] Using language: {language} (skip auto-detection)")
+            model = whisperx.load_model(model_type, device, compute_type=compute_type, asr_options=asr_options, language=language)
             audio_data = whisperx.load_audio(audio_path)  # 使用 audio_path 而不是 audio
             result = model.transcribe(audio_data, batch_size=batch_size)
             
-            language_code=result["language"]
+            language_code = language  # 使用用户选择的语言
             
             # 保存原始 segments（用于 segment 级别）
             # 由于使用了基于静音点的智能分割，不会产生重复，无需去重
