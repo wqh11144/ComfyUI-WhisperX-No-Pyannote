@@ -71,20 +71,21 @@ def find_silence_points(audio: np.ndarray, sample_rate: int = SAMPLE_RATE,
 def find_best_split_point(audio: np.ndarray, target_time: float, 
                           sample_rate: int = SAMPLE_RATE, search_window: float = 5.0):
     """
-    在目标时间附近寻找最佳分割点（静音点）
+    在目标时间之前寻找最佳分割点（静音点）
+    只向前搜索，确保不超过目标时间（避免超过 30 秒限制）
     
     Args:
         audio: 音频数据
         target_time: 目标分割时间（秒）
         sample_rate: 采样率
-        search_window: 搜索窗口（前后各搜索多少秒）
+        search_window: 向前搜索窗口（秒）
     
     Returns:
-        最佳分割点时间（秒）
+        最佳分割点时间（秒），保证 ≤ target_time
     """
-    # 计算搜索范围
+    # 只向前搜索：[target_time - search_window, target_time]
     search_start = max(0, target_time - search_window)
-    search_end = min(len(audio) / sample_rate, target_time + search_window)
+    search_end = target_time  # 不超过目标时间
     
     # 提取搜索区域的音频
     start_sample = int(search_start * sample_rate)
@@ -107,9 +108,9 @@ def find_best_split_point(audio: np.ndarray, target_time: float,
                 min_energy = energy
                 best_point = search_start + i / sample_rate
         
-        return best_point
+        return min(best_point, target_time)  # 确保不超过目标时间
     
-    # 找到距离目标时间最近的静音区间中点
+    # 找到最接近目标时间但不超过的静音区间中点
     best_silence = None
     min_distance = float('inf')
     
@@ -119,10 +120,12 @@ def find_best_split_point(audio: np.ndarray, target_time: float,
         actual_end = search_start + end
         mid_point = (actual_start + actual_end) / 2
         
-        distance = abs(mid_point - target_time)
-        if distance < min_distance:
-            min_distance = distance
-            best_silence = mid_point
+        # 只考虑不超过目标时间的静音点
+        if mid_point <= target_time:
+            distance = target_time - mid_point
+            if distance < min_distance:
+                min_distance = distance
+                best_silence = mid_point
     
     return best_silence if best_silence is not None else target_time
 
@@ -390,10 +393,10 @@ class FasterWhisperPipeline(Pipeline):
 
         def stack(items):
             # 处理不同长度的音频块（静音点分割可能产生不同长度）
-            # Whisper 要求固定 3000 帧（30秒音频）
-            target_frames = 3000  # N_FRAMES = 3000
+            # Whisper 要求特征帧数 = 3000（对应 30 秒音频）
+            target_frames = 3000
             
-            # Pad 或截断所有特征到 3000 帧
+            # Pad 或 trim 所有特征到 3000 帧
             padded_inputs = []
             for x in items:
                 features = x['inputs']
@@ -404,9 +407,9 @@ class FasterWhisperPipeline(Pipeline):
                     pad_size = target_frames - current_frames
                     features = torch.nn.functional.pad(features, (0, pad_size), mode='constant', value=0)
                 elif current_frames > target_frames:
-                    # 截断到 3000 帧（理论上不应该发生，但作为安全保障）
+                    # Trim 到 3000 帧（理论上不应该发生，但做个保险）
                     features = features[..., :target_frames]
-                    print(f"[WhisperX] Warning: Truncated features from {current_frames} to {target_frames} frames")
+                    print(f"[WhisperX] Warning: Trimmed features from {current_frames} to {target_frames} frames")
                 
                 padded_inputs.append(features)
             
@@ -431,59 +434,62 @@ class FasterWhisperPipeline(Pipeline):
 
         # VAD has been disabled - split long audio at silence points
         audio_duration = len(audio) / SAMPLE_RATE
-        chunk_duration = 30.0  # 目标块长度（Whisper 最佳处理长度）
-        max_chunk_duration = 30.0  # 最大块长度（严格不超过 30 秒，Whisper 硬性限制）
+        chunk_duration = 30.0  # 严格的块长度限制（Whisper 要求 ≤ 30s）
         
         vad_segments = []
         if audio_duration <= chunk_duration:
             # 短音频，作为单个片段处理
             vad_segments = [{"start": 0, "end": audio_duration}]
         else:
-            # 长音频，在静音点智能分割
+            # 长音频，在静音点智能分割（只向前搜索，确保不超过 30s）
             print(f"[WhisperX] Audio duration: {audio_duration:.1f}s, finding optimal split points...")
             
             split_points = [0]  # 开始点
-            current_target = chunk_duration
+            current_pos = 0
             
-            while current_target < audio_duration:
-                # 在目标点附近寻找最佳分割点（静音处）
+            while current_pos < audio_duration:
+                # 目标：当前位置 + 30 秒
+                target_time = current_pos + chunk_duration
+                
+                if target_time >= audio_duration:
+                    # 剩余部分不足 30 秒，直接到结尾
+                    break
+                
+                # 只向前搜索静音点：[target-5s, target]，确保 ≤ 30s
                 best_split = find_best_split_point(
                     audio, 
-                    current_target, 
+                    target_time, 
                     SAMPLE_RATE, 
-                    search_window=5.0  # 前后各搜索 5 秒
+                    search_window=5.0  # 向前搜索 5 秒
                 )
                 
-                # 确保块长度严格不超过 30 秒（Whisper 硬性限制）
-                last_split = split_points[-1]
-                if best_split - last_split > max_chunk_duration:
-                    # 如果超过 30 秒，强制在 30 秒处分割
-                    best_split = last_split + max_chunk_duration
-                    print(f"[WhisperX] Warning: Forced split at {best_split:.1f}s (no suitable silence point found)")
-                elif best_split - last_split < 5.0 and current_target < audio_duration:
-                    # 如果块太短（< 5秒）且不是最后一块，尝试延长
-                    best_split = min(last_split + chunk_duration, audio_duration)
+                # 确保块长度 ≤ 30 秒
+                if best_split - current_pos > chunk_duration:
+                    best_split = current_pos + chunk_duration
+                    print(f"[WhisperX] Warning: Forced split at {best_split:.1f}s (exceeds 30s limit)")
                 
                 split_points.append(best_split)
-                
-                # 下一个目标点：从当前分割点 + 30 秒
-                current_target = best_split + chunk_duration
+                current_pos = best_split
             
             # 添加结束点
             split_points.append(audio_duration)
             
-            # 生成 segments，并确保最后一个块不会太短
+            # 生成 segments
             for i in range(len(split_points) - 1):
                 start = split_points[i]
                 end = split_points[i + 1]
+                duration = end - start
                 
                 # 如果是最后一个块且太短（< 5秒），合并到前一个块
-                if i == len(split_points) - 2 and end - start < 5.0 and len(vad_segments) > 0:
+                if i == len(split_points) - 2 and duration < 5.0 and len(vad_segments) > 0:
                     vad_segments[-1]["end"] = end
                 else:
+                    # 确保每个块严格 ≤ 30 秒
+                    if duration > chunk_duration:
+                        print(f"[WhisperX] Error: Chunk {i+1} duration {duration:.1f}s exceeds 30s!")
                     vad_segments.append({"start": start, "end": end})
             
-            print(f"[WhisperX] Split into {len(vad_segments)} chunks at silence points")
+            print(f"[WhisperX] Split into {len(vad_segments)} chunks at silence points (all ≤ 30s)")
             # 显示每个块的长度
             for i, seg in enumerate(vad_segments[:5]):  # 显示前 5 个
                 duration = seg['end'] - seg['start']
