@@ -37,25 +37,9 @@ class SRTToString:
 class WhisperX:
     @classmethod
     def INPUT_TYPES(s):
-        # 所有支持的 Whisper 模型（与 asr.py 中的 model_repo_mapping 保持一致）
-        model_list = [
-            "large-v3",           # Systran/faster-whisper-large-v3
-            "large-v3-turbo",     # deepdml/faster-whisper-large-v3-turbo-ct2
-            "large-v2",           # Systran/faster-whisper-large-v2
-            "large-v1",           # Systran/faster-whisper-large
-            "large",              # Systran/faster-whisper-large
-            "distil-large-v3",    # Systran/faster-distil-whisper-large-v3
-            "medium",             # Systran/faster-whisper-medium
-            "medium.en",          # Systran/faster-whisper-medium.en
-            "distil-medium.en",   # Systran/faster-distil-whisper-medium.en
-            "small",              # Systran/faster-whisper-small
-            "small.en",           # Systran/faster-whisper-small.en
-            "distil-small.en",    # Systran/faster-distil-whisper-small.en
-            "base",               # Systran/faster-whisper-base
-            "base.en",            # Systran/faster-whisper-base.en
-            "tiny",               # Systran/faster-whisper-tiny
-            "tiny.en",            # Systran/faster-whisper-tiny.en
-        ]
+        # 从 asr.py 导入统一管理的模型列表
+        from .whisperx.asr import AVAILABLE_MODELS
+        model_list = AVAILABLE_MODELS
         translator_list = ['alibaba', 'apertium', 'argos', 'baidu', 'bing',
         'caiyun', 'cloudTranslation', 'deepl', 'elia', 'google',
         'hujiang', 'iciba', 'iflytek', 'iflyrec', 'itranslate',

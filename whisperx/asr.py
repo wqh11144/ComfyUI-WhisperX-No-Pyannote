@@ -16,6 +16,30 @@ from .audio import N_SAMPLES, SAMPLE_RATE, load_audio, log_mel_spectrogram
 from .types import TranscriptionResult, SingleSegment
 
 
+# ==================== 模型仓库映射（统一管理）====================
+# 这个映射表定义了所有支持的模型名称及其对应的 HuggingFace 仓库
+MODEL_REPO_MAPPING = {
+    "large-v3": "Systran/faster-whisper-large-v3",
+    "large-v3-turbo": "deepdml/faster-whisper-large-v3-turbo-ct2",
+    "large-v2": "Systran/faster-whisper-large-v2",
+    "distil-large-v3": "Systran/faster-distil-whisper-large-v3",
+    "medium": "Systran/faster-whisper-medium",
+    "medium.en": "Systran/faster-whisper-medium.en",
+    "distil-medium.en": "Systran/faster-distil-whisper-medium.en",
+    "small": "Systran/faster-whisper-small",
+    "small.en": "Systran/faster-whisper-small.en",
+    "distil-small.en": "Systran/faster-distil-whisper-small.en",
+    "base": "Systran/faster-whisper-base",
+    "base.en": "Systran/faster-whisper-base.en",
+    "tiny": "Systran/faster-whisper-tiny",
+    "tiny.en": "Systran/faster-whisper-tiny.en",
+}
+
+# 导出可用的模型列表（供 nodes.py 使用）
+AVAILABLE_MODELS = list(MODEL_REPO_MAPPING.keys())
+# ================================================================
+
+
 def find_silence_points(audio: np.ndarray, sample_rate: int = SAMPLE_RATE, 
                         silence_threshold: float = 0.02, min_silence_duration: float = 0.3):
     """
@@ -143,28 +167,11 @@ def download_model_from_hf(model_name: str, cache_dir: Optional[str] = None) -> 
     Raises:
         Exception: If download fails after retries
     """
-    # Map model names to HuggingFace repo IDs
-    model_repo_mapping = {
-        "large-v3": "Systran/faster-whisper-large-v3",
-        "large-v2": "Systran/faster-whisper-large-v2",
-        "medium": "Systran/faster-whisper-medium",
-        "medium.en": "Systran/faster-whisper-medium.en",
-        "small": "Systran/faster-whisper-small",
-        "small.en": "Systran/faster-whisper-small.en",
-        "base": "Systran/faster-whisper-base",
-        "base.en": "Systran/faster-whisper-base.en",
-        "tiny": "Systran/faster-whisper-tiny",
-        "tiny.en": "Systran/faster-whisper-tiny.en",
-        "distil-large-v3": "Systran/faster-distil-whisper-large-v3",
-        "distil-medium.en": "Systran/faster-distil-whisper-medium.en",
-        "distil-small.en": "Systran/faster-distil-whisper-small.en",
-    }
-    
     # Check if it's a custom repo_id or a standard model name
     if "/" in model_name:
         repo_id = model_name
     else:
-        repo_id = model_repo_mapping.get(model_name, f"Systran/faster-whisper-{model_name}")
+        repo_id = MODEL_REPO_MAPPING.get(model_name, f"Systran/faster-whisper-{model_name}")
     
     print(f"[WhisperX] Checking model: {repo_id}")
     
