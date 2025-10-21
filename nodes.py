@@ -11,6 +11,7 @@ from datetime import timedelta
 import torchaudio
 import tempfile
 from .whisperx.asr import AVAILABLE_MODELS
+from .whisperx.srt_timestamp_fixer import fix_srt_overlaps, print_fix_report
 
 input_path = folder_paths.get_input_directory()
 out_path = folder_paths.get_output_directory()
@@ -81,6 +82,15 @@ class WhisperX:
                      }),
                      "condition_on_previous_text":("BOOLEAN",{
                          "default": False
+                     }),
+                     "fix_overlap":("BOOLEAN",{
+                         "default": True
+                     }),
+                     "gap_ms":("INT",{
+                         "default": 50,
+                         "min": 0,
+                         "max": 500,
+                         "step": 10
                      })
                      },
                 "optional":
@@ -94,7 +104,7 @@ class WhisperX:
     OUTPUT_NODE = True
     FUNCTION = "get_srt"
 
-    def get_srt(self, audio, model_type, language, batch_size, srt_level, if_translate, translator, to_language, temperature, condition_on_previous_text, filename_prefix="subtitle/ComfyUI"):
+    def get_srt(self, audio, model_type, language, batch_size, srt_level, if_translate, translator, to_language, temperature, condition_on_previous_text, fix_overlap, gap_ms, filename_prefix="subtitle/ComfyUI"):
         # 处理输入：支持 AUDIO 对象或文件路径
         temp_path = None
         
@@ -314,6 +324,17 @@ class WhisperX:
             # 生成 SRT 字符串内容
             srt_string = srt.compose(srt_line)
             trans_srt_string = srt.compose(trans_srt_line) if if_translate else ""
+            
+            # 修复时间戳重叠（如果启用）
+            if fix_overlap:
+                print(f"[WhisperX] Fixing timestamp overlaps (gap: {gap_ms}ms)...")
+                srt_string, stats = fix_srt_overlaps(srt_string, gap_ms)
+                print_fix_report(stats)
+                
+                if if_translate:
+                    trans_srt_string, trans_stats = fix_srt_overlaps(trans_srt_string, gap_ms)
+                    if trans_stats["fixed"] > 0:
+                        print(f"[WhisperX] Translation SRT: Fixed {trans_stats['fixed']} overlaps")
             
             # 写入字幕文件
             with open(srt_path, 'w', encoding="utf-8") as f:
