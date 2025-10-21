@@ -10,6 +10,7 @@ from tqdm import tqdm
 from datetime import timedelta
 import torchaudio
 import tempfile
+from .whisperx.asr import AVAILABLE_MODELS
 
 input_path = folder_paths.get_input_directory()
 out_path = folder_paths.get_output_directory()
@@ -37,8 +38,7 @@ class SRTToString:
 class WhisperX:
     @classmethod
     def INPUT_TYPES(s):
-        # 从 asr.py 导入统一管理的模型列表
-        from .whisperx.asr import AVAILABLE_MODELS
+        # 使用统一管理的模型列表（从 asr.py 导入）
         model_list = AVAILABLE_MODELS
         translator_list = ['alibaba', 'apertium', 'argos', 'baidu', 'bing',
         'caiyun', 'cloudTranslation', 'deepl', 'elia', 'google',
