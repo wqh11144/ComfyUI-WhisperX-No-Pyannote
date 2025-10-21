@@ -147,7 +147,7 @@ def download_model_from_hf(model_name: str, cache_dir: Optional[str] = None) -> 
     model_repo_mapping = {
         "large-v3": "Systran/faster-whisper-large-v3",
         "large-v2": "Systran/faster-whisper-large-v2",
-        "large-v1": "Systran/faster-whisper-large-v1",
+        "large-v1": "Systran/faster-whisper-large-v2",  # v1 不存在，使用 v2
         "large": "Systran/faster-whisper-large-v2",  # 使用 v2 作为默认
         "medium": "Systran/faster-whisper-medium",
         "medium.en": "Systran/faster-whisper-medium.en",
