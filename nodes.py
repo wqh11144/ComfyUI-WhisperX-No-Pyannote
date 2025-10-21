@@ -20,7 +20,7 @@ class PreviewSRT:
         return {"required":
                     {"srt": ("SRT",)},
                 "optional":
-                    {"filename_prefix": ("STRING", {"default": "subtitle/ComfyUI"})},
+                    {"filename_prefix": ("STRING", {"default": ""})},
                 }
 
     CATEGORY = "WhisperX"
@@ -309,10 +309,13 @@ class WhisperX:
             # delete model if low on GPU resources
             import gc; gc.collect(); torch.cuda.empty_cache(); del model_a,model
             
-            # 生成文件名
+            # 生成文件名（保存到 temp 子目录）
+            temp_dir = os.path.join(out_path, "temp")
+            os.makedirs(temp_dir, exist_ok=True)
+            
             level_suffix = f"_{srt_level}" if srt_level != "segment" else ""
-            srt_path = os.path.join(out_path,f"{time.time()}_{base_name}{level_suffix}.srt")
-            trans_srt_path = os.path.join(out_path,f"{time.time()}_{base_name}{level_suffix}_{to_language}.srt")
+            srt_path = os.path.join(temp_dir, f"{time.time()}_{base_name}{level_suffix}.srt")
+            trans_srt_path = os.path.join(temp_dir, f"{time.time()}_{base_name}{level_suffix}_{to_language}.srt")
             srt_line = []
             trans_srt_line = []
             
@@ -384,9 +387,10 @@ class WhisperX:
             srt_string = srt.compose(srt_line)
             trans_srt_string = srt.compose(trans_srt_line) if if_translate else ""
             
-            # 写入文件
+            # 写入临时文件
             with open(srt_path, 'w', encoding="utf-8") as f:
                 f.write(srt_string)
+            print(f"[WhisperX] Temp subtitle saved to: {srt_path}")
             
             # 只在翻译时才写入翻译文件
             if if_translate:
