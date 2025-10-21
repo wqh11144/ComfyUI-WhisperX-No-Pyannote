@@ -14,51 +14,6 @@ import tempfile
 input_path = folder_paths.get_input_directory()
 out_path = folder_paths.get_output_directory()
 
-class PreviewSRT:
-    @classmethod
-    def INPUT_TYPES(s):
-        return {"required":
-                    {"srt": ("SRT",)},
-                }
-
-    CATEGORY = "WhisperX"
-
-    RETURN_TYPES = ()
-    OUTPUT_NODE = True
-    
-    FUNCTION = "show_srt"
-
-    def show_srt(self, srt):
-        # 读取 SRT 内容
-        with open(srt, 'r', encoding='utf-8') as f:
-            srt_content = f.read()
-        
-        # 提取文件信息供前端使用
-        srt_name = os.path.basename(srt)
-        srt_dir = os.path.dirname(srt)
-        
-        # 获取相对于 output 目录的子目录
-        if out_path in srt_dir:
-            subfolder = os.path.relpath(srt_dir, out_path)
-            if subfolder == ".":
-                subfolder = ""
-        else:
-            subfolder = ""
-        
-        # 返回预览和下载信息
-        return {
-            "ui": {
-                "srt": [srt_content, srt_name, os.path.basename(srt_dir)],
-                "text": [srt_content],
-                "subtitle": [{
-                    "filename": srt_name,
-                    "subfolder": subfolder,
-                    "type": "output"
-                }]
-            }
-        }
-
-
 class SRTToString:
     @classmethod
     def INPUT_TYPES(s):
