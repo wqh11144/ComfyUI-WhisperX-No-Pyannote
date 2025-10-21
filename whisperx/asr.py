@@ -147,8 +147,8 @@ def download_model_from_hf(model_name: str, cache_dir: Optional[str] = None) -> 
     model_repo_mapping = {
         "large-v3": "Systran/faster-whisper-large-v3",
         "large-v2": "Systran/faster-whisper-large-v2",
-        "large-v1": "Systran/faster-whisper-large",
-        "large": "Systran/faster-whisper-large",
+        "large-v1": "Systran/faster-whisper-large-v1",
+        "large": "Systran/faster-whisper-large-v2",  # 使用 v2 作为默认
         "medium": "Systran/faster-whisper-medium",
         "medium.en": "Systran/faster-whisper-medium.en",
         "small": "Systran/faster-whisper-small",
@@ -185,10 +185,18 @@ def download_model_from_hf(model_name: str, cache_dir: Optional[str] = None) -> 
         }
         model_path = snapshot_download(**local_kwargs)
         
-        # 验证关键文件
+        # 验证关键文件（根据模型大小设置不同的阈值）
+        # tiny 和 base 模型较小，使用较低的阈值
+        if "tiny" in model_name:
+            min_model_size = 50 * 1024 * 1024  # 50 MB
+        elif "base" in model_name:
+            min_model_size = 100 * 1024 * 1024  # 100 MB
+        else:
+            min_model_size = 100 * 1024 * 1024  # 100 MB for larger models
+        
         required_files = {
             "config.json": 0,
-            "model.bin": 100 * 1024 * 1024,  # Min 100 MB
+            "model.bin": min_model_size,
         }
         
         all_files_ok = True
@@ -232,9 +240,17 @@ def download_model_from_hf(model_name: str, cache_dir: Optional[str] = None) -> 
             model_path = snapshot_download(**download_kwargs)
             
             # Verify critical files exist and are complete
+            # 根据模型大小设置不同的阈值
+            if "tiny" in model_name:
+                min_model_size = 50 * 1024 * 1024  # 50 MB
+            elif "base" in model_name:
+                min_model_size = 100 * 1024 * 1024  # 100 MB
+            else:
+                min_model_size = 100 * 1024 * 1024  # 100 MB for larger models
+            
             required_files = {
                 "config.json": 0,  # Min size 0 (just check existence)
-                "model.bin": 100 * 1024 * 1024,  # Min 100 MB
+                "model.bin": min_model_size,
             }
             
             all_files_ok = True
