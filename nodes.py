@@ -67,16 +67,19 @@ class PreviewSRT:
             dir_name = os.path.basename(save_dir)
             print(f"[PreviewSRT] Saved subtitle copy to: {save_path}")
             
-            # 返回文件信息供下载（类似 SaveAudio/SaveImage）
+            # 返回文件信息供下载（类似 SaveAudio 格式）
+            # subfolder 使用相对于 output 目录的路径
+            results = [{
+                "filename": save_filename,
+                "subfolder": subdir if subdir else "",
+                "type": "output"
+            }]
+            
             return {
                 "ui": {
                     "srt": [srt_content, srt_name, dir_name],
-                    "text": [srt_content],  # 文本预览
-                    "files": [{
-                        "filename": save_filename,
-                        "subfolder": subdir,
-                        "type": "output"
-                    }]
+                    "text": [srt_content],
+                    "subtitle": results  # 使用 subtitle 作为字段名，返回文件列表
                 }
             }
         else:

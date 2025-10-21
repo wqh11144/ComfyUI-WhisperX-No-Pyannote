@@ -55,7 +55,7 @@ function addPreviewOptions(nodeType,srt_name,dir_name) {
                         callback: () => {
                             const a = document.createElement("a");
                             a.href = url;
-                            a.setAttribute("download", new URLSearchParams(previewWidget.value.params).get("filename"));
+                            a.setAttribute("download", srt_name);
                             document.body.append(a);
                             a.click();
                             requestAnimationFrame(() => a.remove());
@@ -63,6 +63,24 @@ function addPreviewOptions(nodeType,srt_name,dir_name) {
                     }
                 );
             }
+            
+            // 如果有保存的字幕文件，添加下载选项
+            if (this.subtitle_url) {
+                optNew.push(
+                    {
+                        content: "Download saved subtitle",
+                        callback: () => {
+                            const a = document.createElement("a");
+                            a.href = this.subtitle_url;
+                            a.setAttribute("download", this.subtitle_filename);
+                            document.body.append(a);
+                            a.click();
+                            requestAnimationFrame(() => a.remove());
+                        },
+                    }
+                );
+            }
+            
             if(options.length > 0 && options[0] != null && optNew.length > 0) {
                 optNew.push(null);
             }
@@ -129,11 +147,28 @@ function previewSRT(node,srt_text){
 app.registerExtension({
 	name: "WhisperX.SRTPreviewer",
 	async beforeRegisterNodeDef(nodeType, nodeData, app) {
-		if (nodeData?.name == "PreViewSRT") {
+		if (nodeData?.name == "PreviewSRT") {
 			nodeType.prototype.onExecuted = function (data) {
 				previewSRT(this, data.srt[0]);
-                console.log(data.srt);
-                addPreviewOptions(nodeType,data.srt[1],data.srt[2])
+                console.log("PreviewSRT output data:", data);
+                addPreviewOptions(nodeType, data.srt[1], data.srt[2]);
+                
+                // 处理 subtitle 文件下载（如果有保存的文件）
+                if (data.subtitle && data.subtitle.length > 0) {
+                    const fileInfo = data.subtitle[0];
+                    const downloadUrl = api.apiURL('/view?' + new URLSearchParams({
+                        filename: fileInfo.filename,
+                        type: fileInfo.type,
+                        subfolder: fileInfo.subfolder || ""
+                    }));
+                    
+                    console.log("Subtitle file info:", fileInfo);
+                    console.log("Subtitle download URL:", downloadUrl);
+                    
+                    // 将下载链接存储在节点中，供右键菜单使用
+                    this.subtitle_url = downloadUrl;
+                    this.subtitle_filename = fileInfo.filename;
+                }
 			}
 		}
 	}
