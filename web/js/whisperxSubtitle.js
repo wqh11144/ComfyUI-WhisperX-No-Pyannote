@@ -53,6 +53,7 @@ app.registerExtension({
                     
                     // 存储字幕文件信息供右键菜单使用
                     this.subtitle_files = data.subtitle.map(fileInfo => {
+                        // 拼接完整的下载 URL
                         const downloadUrl = api.apiURL('/view?' + new URLSearchParams({
                             filename: fileInfo.filename,
                             type: fileInfo.type,
@@ -60,12 +61,30 @@ app.registerExtension({
                         }));
                         
                         console.log(`[WhisperX] Subtitle download URL: ${downloadUrl}`);
+                        console.log(`[WhisperX] File info:`, fileInfo);
                         
                         return {
                             filename: fileInfo.filename,
                             url: downloadUrl
                         };
                     });
+                    
+                    // 在节点上添加下载按钮小部件
+                    if (!this.subtitleWidget) {
+                        this.subtitleWidget = this.addWidget("button", "📥 Download Subtitles", "click", () => {
+                            if (this.subtitle_files && this.subtitle_files.length > 0) {
+                                // 下载所有字幕文件
+                                this.subtitle_files.forEach(file => {
+                                    const a = document.createElement("a");
+                                    a.href = file.url;
+                                    a.download = file.filename;
+                                    document.body.append(a);
+                                    a.click();
+                                    setTimeout(() => a.remove(), 100);
+                                });
+                            }
+                        });
+                    }
                 }
             };
             
