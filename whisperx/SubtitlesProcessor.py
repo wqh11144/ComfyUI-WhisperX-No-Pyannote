@@ -1,5 +1,5 @@
 import math
-from conjunctions import get_conjunctions, get_comma
+from .conjunctions import get_conjunctions, get_comma
 from typing import TextIO
 
 def normal_round(n):
@@ -32,18 +32,35 @@ def format_timestamp(seconds: float, is_vtt: bool = False):
 
 
 class SubtitlesProcessor:
-    def __init__(self, segments, lang, max_line_length = 45, min_char_length_splitter = 30, is_vtt = False):
+    def __init__(self, segments, lang, max_line_length = None, min_char_length_splitter = None, is_vtt = False):
         self.comma = get_comma(lang)
         self.conjunctions = set(get_conjunctions(lang))
         self.segments = segments
         self.lang = lang
-        self.max_line_length = max_line_length
-        self.min_char_length_splitter = min_char_length_splitter
         self.is_vtt = is_vtt
+        
+        # 只在未指定时才使用语言自适应（保持向后兼容）
         complex_script_languages = ['th', 'lo', 'my', 'km', 'am', 'ko', 'ja', 'zh', 'ti', 'ta', 'te', 'kn', 'ml', 'hi', 'ne', 'mr', 'ar', 'fa', 'ur', 'ka']
-        if self.lang in complex_script_languages:
-            self.max_line_length = 30
-            self.min_char_length_splitter = 20
+        
+        if max_line_length is None:
+            # 未指定，使用语言自适应
+            if self.lang in complex_script_languages:
+                self.max_line_length = 30
+            else:
+                self.max_line_length = 45
+        else:
+            # 已指定，使用传入的值（custom 模式）
+            self.max_line_length = max_line_length
+        
+        if min_char_length_splitter is None:
+            # 未指定，使用语言自适应
+            if self.lang in complex_script_languages:
+                self.min_char_length_splitter = 20
+            else:
+                self.min_char_length_splitter = 30
+        else:
+            # 已指定，使用传入的值（custom 模式）
+            self.min_char_length_splitter = min_char_length_splitter
 
     def estimate_timestamp_for_word(self, words, i, next_segment_start_time=None):
         k = 0.25

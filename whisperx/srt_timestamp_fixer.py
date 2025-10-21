@@ -121,24 +121,3 @@ def print_fix_report(stats: dict, verbose: bool = False):
         if len(stats['overlaps']) > 5:
             print(f"  ... and {len(stats['overlaps']) - 5} more")
 
-
-if __name__ == "__main__":
-    # 测试代码
-    import sys
-    
-    if len(sys.argv) < 2:
-        print("Usage: python srt_timestamp_fixer.py <input.srt> [output.srt] [gap_ms]")
-        sys.exit(1)
-    
-    input_file = sys.argv[1]
-    output_file = sys.argv[2] if len(sys.argv) > 2 else None
-    gap_ms = int(sys.argv[3]) if len(sys.argv) > 3 else 50
-    
-    print(f"[SRT Fixer] Processing: {input_file}")
-    print(f"[SRT Fixer] Gap setting: {gap_ms}ms")
-    
-    stats = fix_srt_file(input_file, output_file, gap_ms)
-    print_fix_report(stats, verbose=True)
-    
-    print(f"[SRT Fixer] ✨ Done! Output: {output_file or input_file}")
-

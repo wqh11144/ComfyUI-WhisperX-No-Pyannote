@@ -91,6 +91,24 @@ class WhisperX:
                          "min": 0,
                          "max": 500,
                          "step": 10
+                     }),
+                     "enable_smart_split":("BOOLEAN",{
+                         "default": False
+                     }),
+                     "split_strategy":(["auto", "custom"],{
+                         "default": "auto"
+                     }),
+                     "custom_max_length":("INT",{
+                         "default": 30,
+                         "min": 10,
+                         "max": 100,
+                         "step": 5
+                     }),
+                     "custom_min_length":("INT",{
+                         "default": 20,
+                         "min": 5,
+                         "max": 80,
+                         "step": 5
                      })
                      },
                 "optional":
@@ -104,7 +122,7 @@ class WhisperX:
     OUTPUT_NODE = True
     FUNCTION = "get_srt"
 
-    def get_srt(self, audio, model_type, language, batch_size, srt_level, if_translate, translator, to_language, temperature, condition_on_previous_text, fix_overlap, gap_ms, filename_prefix="subtitle/ComfyUI"):
+    def get_srt(self, audio, model_type, language, batch_size, srt_level, if_translate, translator, to_language, temperature, condition_on_previous_text, fix_overlap, gap_ms, enable_smart_split, split_strategy, custom_max_length, custom_min_length, filename_prefix="subtitle/ComfyUI"):
         # 处理输入：支持 AUDIO 对象或文件路径
         temp_path = None
         
@@ -273,15 +291,59 @@ class WhisperX:
             elif srt_level == "sentence":
                 # Sentence 级别：使用内置的 PunktSentenceTokenizer 分割
                 # align() 函数已经按句子分割好了（merge_sentences=False）
-                for i, seg in enumerate(tqdm(result["segments"], desc="Generating sentence-level SRT...", total=len(result["segments"]))):
-                    start = timedelta(seconds=seg['start'])
-                    end = timedelta(seconds=seg['end'])
-                    content = seg['text']
-                    srt_line.append(srt.Subtitle(index=i+1, start=start, end=end, content=content))
+                
+                # 如果启用智能分割，使用 SubtitlesProcessor 进行二次处理
+                if enable_smart_split:
+                    from .whisperx.SubtitlesProcessor import SubtitlesProcessor
                     
-                    if if_translate:
-                        translated = ts.translate_text(query_text=content, translator=translator, to_language=to_language)
-                        trans_srt_line.append(srt.Subtitle(index=i+1, start=start, end=end, content=translated))
+                    # 根据策略确定最大长度
+                    if split_strategy == "auto":
+                        # 智能分割：根据语言自动选择最佳长度
+                        complex_script_languages = ['th', 'lo', 'my', 'km', 'am', 'ko', 'ja', 'zh', 
+                                                   'ti', 'ta', 'te', 'kn', 'ml', 'hi', 'ne', 'mr', 
+                                                   'ar', 'fa', 'ur', 'ka']
+                        if language in complex_script_languages:
+                            max_line_length = 30  # 中日韩等复杂文字
+                            min_char_length = 20
+                        else:
+                            max_line_length = 45  # 英文等
+                            min_char_length = 30
+                        print(f"[WhisperX] Smart split enabled (auto mode: {language} → {max_line_length} chars)")
+                    else:
+                        # 自定义：使用用户指定的长度
+                        max_line_length = custom_max_length
+                        min_char_length = custom_min_length
+                        print(f"[WhisperX] Smart split enabled (custom mode: max={max_line_length}, min={min_char_length} chars)")
+                    
+                    processor = SubtitlesProcessor(
+                        segments=result["segments"],
+                        lang=language,
+                        max_line_length=max_line_length,
+                        min_char_length_splitter=min_char_length
+                    )
+                    processed_segments = processor.process_segments(advanced_splitting=True)
+                    
+                    # 使用处理后的片段
+                    for i, seg in enumerate(tqdm(processed_segments, desc="Generating smart-split SRT...", total=len(processed_segments))):
+                        start = timedelta(seconds=seg['start'])
+                        end = timedelta(seconds=seg['end'])
+                        content = seg['text']
+                        srt_line.append(srt.Subtitle(index=i+1, start=start, end=end, content=content))
+                        
+                        if if_translate:
+                            translated = ts.translate_text(query_text=content, translator=translator, to_language=to_language)
+                            trans_srt_line.append(srt.Subtitle(index=i+1, start=start, end=end, content=translated))
+                else:
+                    # 原始处理逻辑（默认）
+                    for i, seg in enumerate(tqdm(result["segments"], desc="Generating sentence-level SRT...", total=len(result["segments"]))):
+                        start = timedelta(seconds=seg['start'])
+                        end = timedelta(seconds=seg['end'])
+                        content = seg['text']
+                        srt_line.append(srt.Subtitle(index=i+1, start=start, end=end, content=content))
+                        
+                        if if_translate:
+                            translated = ts.translate_text(query_text=content, translator=translator, to_language=to_language)
+                            trans_srt_line.append(srt.Subtitle(index=i+1, start=start, end=end, content=translated))
                         
             elif srt_level == "word":
                 # Word 级别：每个词一个字幕
