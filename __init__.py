@@ -2,7 +2,7 @@ import os,sys
 now_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(now_dir)
 WEB_DIRECTORY = "./web"
-from .nodes import LoadAudioPath,WhisperX,PreviewSRT,SaveSRT,SRTToString
+from .nodes import LoadAudioPath,WhisperX,PreviewSRT,SRTToString
 
 # Set the web directory, any .js file in that directory will be loaded by the frontend as a frontend extension
 # WEB_DIRECTORY = "./somejs"
@@ -13,7 +13,6 @@ NODE_CLASS_MAPPINGS = {
     "LoadAudioPath": LoadAudioPath,
     "WhisperX": WhisperX,
     "PreviewSRT": PreviewSRT,
-    "SaveSRT": SaveSRT,
     "SRTToString": SRTToString
 }
 
@@ -22,6 +21,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "LoadAudioPath": "Load Audio Path",
     "WhisperX": "WhisperX Transcribe",
     "PreviewSRT": "Preview SRT",
-    "SaveSRT": "Save SRT",
     "SRTToString": "SRT to String"
 }

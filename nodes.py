@@ -59,66 +59,6 @@ class PreviewSRT:
         }
 
 
-class SaveSRT:
-    @classmethod
-    def INPUT_TYPES(s):
-        return {"required":
-                    {"srt": ("SRT",)},
-                "optional":
-                    {"filename_prefix": ("STRING", {"default": "subtitle/ComfyUI"})},
-                }
-
-    CATEGORY = "WhisperX"
-
-    RETURN_TYPES = ()
-    OUTPUT_NODE = True
-    
-    FUNCTION = "save_srt"
-
-    def save_srt(self, srt, filename_prefix="subtitle/ComfyUI"):
-        # 读取 SRT 内容
-        with open(srt, 'r', encoding='utf-8') as f:
-            srt_content = f.read()
-        
-        # 解析子目录和文件名前缀
-        if "/" in filename_prefix or "\\" in filename_prefix:
-            # 包含子目录
-            parts = filename_prefix.replace("\\", "/").split("/")
-            subdir = "/".join(parts[:-1])
-            prefix = parts[-1]
-            
-            # 创建完整的输出目录
-            save_dir = os.path.join(out_path, subdir)
-            os.makedirs(save_dir, exist_ok=True)
-        else:
-            # 没有子目录
-            save_dir = out_path
-            subdir = ""
-            prefix = filename_prefix
-        
-        # 生成带时间戳的文件名
-        timestamp = int(time.time() * 1000)  # 毫秒级时间戳
-        save_filename = f"{prefix}_{timestamp}.srt"
-        save_path = os.path.join(save_dir, save_filename)
-        
-        # 保存文件
-        with open(save_path, 'w', encoding='utf-8') as f:
-            f.write(srt_content)
-        
-        print(f"[SaveSRT] Subtitle saved to: {save_path}")
-        
-        # 返回文件信息供队列下载（标准格式）
-        return {
-            "ui": {
-                "subtitle": [{
-                    "filename": save_filename,
-                    "subfolder": subdir,
-                    "type": "output"
-                }]
-            }
-        }
-
-
 class SRTToString:
     @classmethod
     def INPUT_TYPES(s):
@@ -212,6 +152,7 @@ class WhisperX:
 
     RETURN_TYPES = ("SRT","SRT","STRING","STRING")
     RETURN_NAMES = ("ori_srt_file","trans_srt_file","ori_srt_string","trans_srt_string")
+    OUTPUT_NODE = True
     FUNCTION = "get_srt"
 
     def get_srt(self, audio, model_type, language, batch_size, srt_level, if_translate, translator, to_language, temperature, condition_on_previous_text, filename_prefix="subtitle/ComfyUI"):
@@ -444,9 +385,37 @@ class WhisperX:
             if if_translate:
                 with open(trans_srt_path, 'w', encoding="utf-8") as f:
                     f.write(trans_srt_string)
-                return (srt_path, trans_srt_path, srt_string, trans_srt_string)
+                
+                # 返回结果和下载信息
+                return {
+                    "result": (srt_path, trans_srt_path, srt_string, trans_srt_string),
+                    "ui": {
+                        "subtitle": [
+                            {
+                                "filename": srt_filename,
+                                "subfolder": subdir,
+                                "type": "output"
+                            },
+                            {
+                                "filename": trans_srt_filename,
+                                "subfolder": subdir,
+                                "type": "output"
+                            }
+                        ]
+                    }
+                }
             else:
-                return (srt_path, srt_path, srt_string, srt_string)
+                # 返回结果和下载信息
+                return {
+                    "result": (srt_path, srt_path, srt_string, srt_string),
+                    "ui": {
+                        "subtitle": [{
+                            "filename": srt_filename,
+                            "subfolder": subdir,
+                            "type": "output"
+                        }]
+                    }
+                }
         
         finally:
             # 清理临时文件
