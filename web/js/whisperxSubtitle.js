@@ -33,63 +33,6 @@ app.registerExtension({
             }
         `;
         document.head.appendChild(style);
-        
-        // 拦截节点输出，在队列历史面板中添加字幕下载链接
-        const originalOnNodeOutputChanged = api.addEventListener ? null : null;
-        
-        // 监听执行完成事件
-        api.addEventListener("executed", ({ detail }) => {
-            const { node, output } = detail;
-            if (output?.subtitle && output.subtitle.length > 0) {
-                console.log("[WhisperX] Queue output detected:", output.subtitle);
-                
-                // 延迟执行，等待 UI 更新
-                setTimeout(() => {
-                    // 在队列历史面板中查找并添加下载链接
-                    addSubtitleLinksToQueue(output.subtitle);
-                }, 500);
-            }
-        });
-        
-        // 在队列历史面板中添加字幕下载链接
-        function addSubtitleLinksToQueue(subtitles) {
-            // 查找队列面板中最新的输出元素
-            const queueOutputs = document.querySelectorAll('.comfy-queue-output, .comfyui-queue-output');
-            if (queueOutputs.length === 0) return;
-            
-            const latestOutput = queueOutputs[queueOutputs.length - 1];
-            
-            // 检查是否已经添加过字幕链接
-            if (latestOutput.querySelector('.whisperx-subtitle-links')) return;
-            
-            // 创建字幕下载区域
-            const subtitleContainer = document.createElement('div');
-            subtitleContainer.className = 'whisperx-subtitle-links whisperx-subtitle-container';
-            subtitleContainer.innerHTML = '<strong>📥 字幕文件:</strong><br>';
-            
-            subtitles.forEach(fileInfo => {
-                const downloadUrl = api.apiURL('/view?' + new URLSearchParams({
-                    filename: fileInfo.filename,
-                    type: fileInfo.type,
-                    subfolder: fileInfo.subfolder || ""
-                }));
-                
-                const link = document.createElement('a');
-                link.href = downloadUrl;
-                link.download = fileInfo.filename;
-                link.className = 'whisperx-subtitle-download';
-                link.textContent = `📄 ${fileInfo.filename}`;
-                link.style.display = 'inline-block';
-                link.style.marginRight = '8px';
-                link.style.marginTop = '4px';
-                
-                subtitleContainer.appendChild(link);
-            });
-            
-            // 添加到输出面板
-            latestOutput.appendChild(subtitleContainer);
-            console.log("[WhisperX] Added subtitle links to queue panel");
-        }
     },
     
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
@@ -97,6 +40,23 @@ app.registerExtension({
         
         if (nodeData?.name == "WhisperX") {
             console.log("[WhisperX Extension] Hooking into WhisperX node");
+            
+            // 监听工作流开始执行
+            const originalOnExecutionStart = nodeType.prototype.onExecutionStart;
+            nodeType.prototype.onExecutionStart = function() {
+                if (originalOnExecutionStart) {
+                    originalOnExecutionStart.apply(this, arguments);
+                }
+                
+                // 隐藏下载按钮
+                if (this.subtitleWidget) {
+                    this.subtitleWidget.hidden = true;
+                    console.log("[WhisperX] Download button hidden on execution start");
+                }
+                
+                // 清空之前的字幕文件信息
+                this.subtitle_files = null;
+            };
             
             nodeType.prototype.onExecuted = function (data) {
                 console.log("[WhisperX] onExecuted called!");
@@ -125,7 +85,7 @@ app.registerExtension({
                         };
                     });
                     
-                    // 在节点上添加下载按钮小部件
+                    // 创建或显示下载按钮
                     if (!this.subtitleWidget) {
                         this.subtitleWidget = this.addWidget("button", "📥 Download Subtitles", "click", () => {
                             if (this.subtitle_files && this.subtitle_files.length > 0) {
@@ -140,7 +100,15 @@ app.registerExtension({
                                 });
                             }
                         });
+                    } else {
+                        // 显示已存在的按钮
+                        this.subtitleWidget.hidden = false;
                     }
+                    
+                    console.log("[WhisperX] Download button shown");
+                    
+                    // 刷新节点显示
+                    this.setDirtyCanvas(true, true);
                 }
             };
             
