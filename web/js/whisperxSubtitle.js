@@ -34,14 +34,62 @@ app.registerExtension({
         `;
         document.head.appendChild(style);
         
-        // 监听 API 事件，在队列历史中添加下载按钮
+        // 拦截节点输出，在队列历史面板中添加字幕下载链接
+        const originalOnNodeOutputChanged = api.addEventListener ? null : null;
+        
+        // 监听执行完成事件
         api.addEventListener("executed", ({ detail }) => {
             const { node, output } = detail;
             if (output?.subtitle && output.subtitle.length > 0) {
-                console.log("[WhisperX] Queue output detected:", output);
-                // 下载信息已经通过 UI 返回，浏览器会自动处理
+                console.log("[WhisperX] Queue output detected:", output.subtitle);
+                
+                // 延迟执行，等待 UI 更新
+                setTimeout(() => {
+                    // 在队列历史面板中查找并添加下载链接
+                    addSubtitleLinksToQueue(output.subtitle);
+                }, 500);
             }
         });
+        
+        // 在队列历史面板中添加字幕下载链接
+        function addSubtitleLinksToQueue(subtitles) {
+            // 查找队列面板中最新的输出元素
+            const queueOutputs = document.querySelectorAll('.comfy-queue-output, .comfyui-queue-output');
+            if (queueOutputs.length === 0) return;
+            
+            const latestOutput = queueOutputs[queueOutputs.length - 1];
+            
+            // 检查是否已经添加过字幕链接
+            if (latestOutput.querySelector('.whisperx-subtitle-links')) return;
+            
+            // 创建字幕下载区域
+            const subtitleContainer = document.createElement('div');
+            subtitleContainer.className = 'whisperx-subtitle-links whisperx-subtitle-container';
+            subtitleContainer.innerHTML = '<strong>📥 字幕文件:</strong><br>';
+            
+            subtitles.forEach(fileInfo => {
+                const downloadUrl = api.apiURL('/view?' + new URLSearchParams({
+                    filename: fileInfo.filename,
+                    type: fileInfo.type,
+                    subfolder: fileInfo.subfolder || ""
+                }));
+                
+                const link = document.createElement('a');
+                link.href = downloadUrl;
+                link.download = fileInfo.filename;
+                link.className = 'whisperx-subtitle-download';
+                link.textContent = `📄 ${fileInfo.filename}`;
+                link.style.display = 'inline-block';
+                link.style.marginRight = '8px';
+                link.style.marginTop = '4px';
+                
+                subtitleContainer.appendChild(link);
+            });
+            
+            // 添加到输出面板
+            latestOutput.appendChild(subtitleContainer);
+            console.log("[WhisperX] Added subtitle links to queue panel");
+        }
     },
     
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
