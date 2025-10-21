@@ -4,6 +4,8 @@ import { api } from '../../../scripts/api.js'
 app.registerExtension({
     name: "WhisperX.SubtitleDownload",
     async setup() {
+        console.log("[WhisperX Extension] Loading subtitle download extension...");
+        
         // 添加自定义样式
         const style = document.createElement("style");
         style.innerHTML = `
@@ -43,9 +45,15 @@ app.registerExtension({
     },
     
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
+        console.log("[WhisperX Extension] Registering node:", nodeData?.name);
+        
         if (nodeData?.name == "WhisperX") {
+            console.log("[WhisperX Extension] Hooking into WhisperX node");
+            
             nodeType.prototype.onExecuted = function (data) {
+                console.log("[WhisperX] onExecuted called!");
                 console.log("[WhisperX] Output data:", data);
+                console.log("[WhisperX] data.subtitle:", data.subtitle);
                 
                 // 处理字幕文件下载
                 if (data.subtitle && data.subtitle.length > 0) {
