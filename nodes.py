@@ -20,7 +20,7 @@ class PreviewSRT:
         return {"required":
                     {"srt": ("SRT",)},
                 "optional":
-                    {"filename_prefix": ("STRING", {"default": "subtitle/ComfyUI_ou t pu"})},
+                    {"filename_prefix": ("STRING", {"default": "subtitle/ComfyUI"})},
                 }
 
     CATEGORY = "WhisperX"
@@ -50,6 +50,7 @@ class PreviewSRT:
             else:
                 # 没有子目录
                 save_dir = out_path
+                subdir = ""
                 prefix = filename_prefix
             
             # 生成带时间戳的文件名
@@ -65,13 +66,26 @@ class PreviewSRT:
             srt_name = save_filename
             dir_name = os.path.basename(save_dir)
             print(f"[PreviewSRT] Saved subtitle copy to: {save_path}")
+            
+            # 返回文件信息供下载（类似 SaveAudio/SaveImage）
+            return {
+                "ui": {
+                    "srt": [srt_content, srt_name, dir_name],
+                    "text": [srt_content],  # 文本预览
+                    "files": [{
+                        "filename": save_filename,
+                        "subfolder": subdir,
+                        "type": "output"
+                    }]
+                }
+            }
         else:
             # 向后兼容：不提供 filename_prefix 时使用原始路径
             srt_name = os.path.basename(srt)
             dir_name = os.path.dirname(srt)
             dir_name = os.path.basename(dir_name)
-        
-        return {"ui": {"srt":[srt_content, srt_name, dir_name]}}
+            
+            return {"ui": {"srt":[srt_content, srt_name, dir_name]}}
 
 
 class SRTToString:
