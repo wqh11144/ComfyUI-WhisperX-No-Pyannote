@@ -19,6 +19,8 @@ class PreviewSRT:
     def INPUT_TYPES(s):
         return {"required":
                     {"srt": ("SRT",)},
+                "optional":
+                    {"filename_prefix": ("STRING", {"default": "subtitle/ComfyUI_ou t pu"})},
                 }
 
     CATEGORY = "WhisperX"
@@ -28,13 +30,48 @@ class PreviewSRT:
     
     FUNCTION = "show_srt"
 
-    def show_srt(self, srt):
-        srt_name = os.path.basename(srt)
-        dir_name = os.path.dirname(srt)
-        dir_name = os.path.basename(dir_name)
-        with open(srt, 'r') as f:
+    def show_srt(self, srt, filename_prefix=""):
+        # 读取原始 SRT 内容
+        with open(srt, 'r', encoding='utf-8') as f:
             srt_content = f.read()
-        return {"ui": {"srt":[srt_content,srt_name,dir_name]}}
+        
+        # 如果提供了 filename_prefix，保存副本到指定路径
+        if filename_prefix and filename_prefix.strip():
+            # 解析子目录和文件名前缀
+            if "/" in filename_prefix or "\\" in filename_prefix:
+                # 包含子目录
+                parts = filename_prefix.replace("\\", "/").split("/")
+                subdir = "/".join(parts[:-1])
+                prefix = parts[-1]
+                
+                # 创建完整的输出目录
+                save_dir = os.path.join(out_path, subdir)
+                os.makedirs(save_dir, exist_ok=True)
+            else:
+                # 没有子目录
+                save_dir = out_path
+                prefix = filename_prefix
+            
+            # 生成带时间戳的文件名
+            timestamp = int(time.time() * 1000)  # 毫秒级时间戳
+            save_filename = f"{prefix}_{timestamp}.srt"
+            save_path = os.path.join(save_dir, save_filename)
+            
+            # 保存副本
+            with open(save_path, 'w', encoding='utf-8') as f:
+                f.write(srt_content)
+            
+            # 使用保存的文件信息返回给 UI
+            srt_name = save_filename
+            dir_name = os.path.basename(save_dir)
+            print(f"[PreviewSRT] Saved subtitle copy to: {save_path}")
+        else:
+            # 向后兼容：不提供 filename_prefix 时使用原始路径
+            srt_name = os.path.basename(srt)
+            dir_name = os.path.dirname(srt)
+            dir_name = os.path.basename(dir_name)
+        
+        return {"ui": {"srt":[srt_content, srt_name, dir_name]}}
 
 
 class SRTToString:
