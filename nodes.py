@@ -19,8 +19,6 @@ class PreviewSRT:
     def INPUT_TYPES(s):
         return {"required":
                     {"srt": ("SRT",)},
-                "optional":
-                    {"filename_prefix": ("STRING", {"default": ""})},
                 }
 
     CATEGORY = "WhisperX"
@@ -30,65 +28,35 @@ class PreviewSRT:
     
     FUNCTION = "show_srt"
 
-    def show_srt(self, srt, filename_prefix=""):
-        # 读取原始 SRT 内容
+    def show_srt(self, srt):
+        # 读取 SRT 内容
         with open(srt, 'r', encoding='utf-8') as f:
             srt_content = f.read()
         
-        # 如果提供了 filename_prefix，保存副本到指定路径
-        if filename_prefix and filename_prefix.strip():
-            # 解析子目录和文件名前缀
-            if "/" in filename_prefix or "\\" in filename_prefix:
-                # 包含子目录
-                parts = filename_prefix.replace("\\", "/").split("/")
-                subdir = "/".join(parts[:-1])
-                prefix = parts[-1]
-                
-                # 创建完整的输出目录
-                save_dir = os.path.join(out_path, subdir)
-                os.makedirs(save_dir, exist_ok=True)
-            else:
-                # 没有子目录
-                save_dir = out_path
-                subdir = ""
-                prefix = filename_prefix
-            
-            # 生成带时间戳的文件名
-            timestamp = int(time.time() * 1000)  # 毫秒级时间戳
-            save_filename = f"{prefix}_{timestamp}.srt"
-            save_path = os.path.join(save_dir, save_filename)
-            
-            # 保存副本
-            with open(save_path, 'w', encoding='utf-8') as f:
-                f.write(srt_content)
-            
-            # 使用保存的文件信息返回给 UI
-            srt_name = save_filename
-            dir_name = os.path.basename(save_dir)
-            print(f"[PreviewSRT] Saved subtitle copy to: {save_path}")
-            
-            # 返回文件信息供下载（类似 SaveAudio 格式）
-            # subfolder 使用相对于 output 目录的路径
-            results = [{
-                "filename": save_filename,
-                "subfolder": subdir if subdir else "",
-                "type": "output"
-            }]
-            
-            return {
-                "ui": {
-                    "srt": [srt_content, srt_name, dir_name],
-                    "text": [srt_content],
-                    "subtitle": results  # 使用 subtitle 作为字段名，返回文件列表
-                }
-            }
+        # 提取文件信息供前端使用
+        srt_name = os.path.basename(srt)
+        srt_dir = os.path.dirname(srt)
+        
+        # 获取相对于 output 目录的子目录
+        if out_path in srt_dir:
+            subfolder = os.path.relpath(srt_dir, out_path)
+            if subfolder == ".":
+                subfolder = ""
         else:
-            # 向后兼容：不提供 filename_prefix 时使用原始路径
-            srt_name = os.path.basename(srt)
-            dir_name = os.path.dirname(srt)
-            dir_name = os.path.basename(dir_name)
-            
-            return {"ui": {"srt":[srt_content, srt_name, dir_name]}}
+            subfolder = ""
+        
+        # 返回预览和下载信息
+        return {
+            "ui": {
+                "srt": [srt_content, srt_name, os.path.basename(srt_dir)],
+                "text": [srt_content],
+                "subtitle": [{
+                    "filename": srt_name,
+                    "subfolder": subfolder,
+                    "type": "output"
+                }]
+            }
+        }
 
 
 class SRTToString:
@@ -176,6 +144,8 @@ class WhisperX:
                          "default": False
                      })
                      },
+                "optional":
+                    {"filename_prefix": ("STRING", {"default": "subtitle/ComfyUI"})},
                 }
 
     CATEGORY = "WhisperX"
@@ -184,7 +154,7 @@ class WhisperX:
     RETURN_NAMES = ("ori_srt_file","trans_srt_file","ori_srt_string","trans_srt_string")
     FUNCTION = "get_srt"
 
-    def get_srt(self, audio,model_type,language,batch_size,srt_level,if_translate,translator,to_language,temperature,condition_on_previous_text):
+    def get_srt(self, audio, model_type, language, batch_size, srt_level, if_translate, translator, to_language, temperature, condition_on_previous_text, filename_prefix="subtitle/ComfyUI"):
         # 处理输入：支持 AUDIO 对象或文件路径
         temp_path = None
         
@@ -309,13 +279,31 @@ class WhisperX:
             # delete model if low on GPU resources
             import gc; gc.collect(); torch.cuda.empty_cache(); del model_a,model
             
-            # 生成文件名（保存到 temp 子目录）
-            temp_dir = os.path.join(out_path, "temp")
-            os.makedirs(temp_dir, exist_ok=True)
+            # 生成文件名（根据 filename_prefix 保存到指定目录）
+            # 解析子目录和文件名前缀
+            if "/" in filename_prefix or "\\" in filename_prefix:
+                # 包含子目录
+                parts = filename_prefix.replace("\\", "/").split("/")
+                subdir = "/".join(parts[:-1])
+                prefix = parts[-1]
+                
+                # 创建完整的输出目录
+                save_dir = os.path.join(out_path, subdir)
+                os.makedirs(save_dir, exist_ok=True)
+            else:
+                # 没有子目录
+                save_dir = out_path
+                subdir = ""
+                prefix = filename_prefix
             
+            # 生成带时间戳的文件名
+            timestamp = int(time.time() * 1000)  # 毫秒级时间戳
             level_suffix = f"_{srt_level}" if srt_level != "segment" else ""
-            srt_path = os.path.join(temp_dir, f"{time.time()}_{base_name}{level_suffix}.srt")
-            trans_srt_path = os.path.join(temp_dir, f"{time.time()}_{base_name}{level_suffix}_{to_language}.srt")
+            srt_filename = f"{prefix}_{timestamp}{level_suffix}.srt"
+            trans_srt_filename = f"{prefix}_{timestamp}{level_suffix}_{to_language}.srt"
+            
+            srt_path = os.path.join(save_dir, srt_filename)
+            trans_srt_path = os.path.join(save_dir, trans_srt_filename)
             srt_line = []
             trans_srt_line = []
             
@@ -387,10 +375,10 @@ class WhisperX:
             srt_string = srt.compose(srt_line)
             trans_srt_string = srt.compose(trans_srt_line) if if_translate else ""
             
-            # 写入临时文件
+            # 写入字幕文件
             with open(srt_path, 'w', encoding="utf-8") as f:
                 f.write(srt_string)
-            print(f"[WhisperX] Temp subtitle saved to: {srt_path}")
+            print(f"[WhisperX] Subtitle saved to: {srt_path}")
             
             # 只在翻译时才写入翻译文件
             if if_translate:
