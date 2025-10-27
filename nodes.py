@@ -86,17 +86,17 @@ class WhisperX:
                      "fix_overlap":("BOOLEAN",{
                          "default": True
                      }),
-                     "gap_ms":("INT",{
-                         "default": 50,
-                         "min": 0,
-                         "max": 500,
-                         "step": 10
-                     }),
                      "enable_smart_split":("BOOLEAN",{
                          "default": False
                      }),
                      "split_strategy":(["auto", "custom"],{
                          "default": "auto"
+                     }),
+                     "gap_ms":("INT",{
+                         "default": 50,
+                         "min": 0,
+                         "max": 500,
+                         "step": 10
                      }),
                      "custom_max_length":("INT",{
                          "default": 30,
@@ -122,7 +122,7 @@ class WhisperX:
     OUTPUT_NODE = True
     FUNCTION = "get_srt"
 
-    def get_srt(self, audio, model_type, language, batch_size, srt_level, if_translate, translator, to_language, temperature, condition_on_previous_text, fix_overlap, gap_ms, enable_smart_split, split_strategy, custom_max_length, custom_min_length, filename_prefix="subtitle/ComfyUI"):
+    def get_srt(self, audio, model_type, language, batch_size, srt_level, if_translate, translator, to_language, temperature, condition_on_previous_text, fix_overlap, enable_smart_split, split_strategy, gap_ms, custom_max_length, custom_min_length, filename_prefix="subtitle/ComfyUI"):
         # 处理输入：支持 AUDIO 对象或文件路径
         temp_path = None
         
